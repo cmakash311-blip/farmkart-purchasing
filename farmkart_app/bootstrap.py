@@ -11,6 +11,16 @@ def initialize():
         for code,name in [('HMT','Himatnagar'),('MDS','Modasa')]:
             if not db.scalar(select(Branch).where(Branch.code==code)):
                 db.add(Branch(code=code,name=name))
+        if not db.scalar(select(User).where(User.username=='farmadmin')):
+            db.add(User(
+                username='farmadmin',
+                full_name='Farmkart Administrator',
+                password_hash='scrypt$15f00030d5448cc785717b2e8123a5f4$280973067476e9658f2c67fe4d235c562ecbbd241d703e332ae438286e72f72483f1b05277e6ada8cc909c45fa4bb6d48f09269d978d152b860c43c321579852',
+                role='OWNER',
+                branch_id=None,
+                active=True
+            ))
+            print('Default admin user created: farmadmin')
     print('Database schema initialized. Factories: HMT (Himatnagar), MDS (Modasa).')
 
 def create_user(username=None, name=None, role=None, branch_id=None, password=None):
