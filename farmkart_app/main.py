@@ -150,12 +150,13 @@ class PurchaseVoidIn(BaseModel):
     reason: str = Field(min_length=5, max_length=500)
 
 @app.get('/')
-def index(): return FileResponse(STATIC/'index.html')
+def index():
+    return FileResponse(STATIC/'index.html', headers={'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0'})
 
 @app.get('/static/{filename}')
 def static(filename:str):
     if filename not in ['app.css','app.js']: raise HTTPException(404)
-    return FileResponse(STATIC/filename)
+    return FileResponse(STATIC/filename, headers={'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0'})
 
 @app.get('/api/health')
 def health(): return {'status':'ok'}
@@ -172,7 +173,19 @@ def login(request:Request, data:LoginIn, response:Response, db:Session=Depends(g
         os.getenv('COOKIE_SECURE', '0') == '1'
     )
     response.set_cookie(COOKIE_NAME, token, httponly=True, secure=is_https, samesite='lax', max_age=12*3600, path='/')
-    return {'ok':True, 'token': token, 'csrf_token':record.csrf_token}
+    return {
+        'ok': True,
+        'token': token,
+        'csrf_token': record.csrf_token,
+        'user': {
+            'id': user.id,
+            'name': user.full_name,
+            'username': user.username,
+            'role': user.role,
+            'branch_id': user.branch_id,
+            'csrf_token': record.csrf_token
+        }
+    }
 
 @app.post('/api/logout')
 def logout(request:Request, response:Response, db:Session=Depends(get_db)):
