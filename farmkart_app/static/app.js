@@ -526,6 +526,7 @@ async function renderPurchases(){
                         <div class="row" style="gap:6px">
                           <button class="secondary" data-bill="${p.id}" style="padding:4px 8px;font-size:11px">Open</button>
                           ${!isVoid && ['OWNER','PURCHASE'].includes(state.user.role)?`<button class="secondary" data-edit-bill="${p.id}" style="padding:4px 8px;font-size:11px;color:#853d32;border-color:#853d32" title="સુધારો (Edit)">✏</button>`:''}
+                          ${!isVoid && ['OWNER','PURCHASE'].includes(state.user.role)?`<button class="outline-btn" data-void-bill="${p.id}" data-bill-num="${text(p.number)}" style="padding:4px 8px;font-size:11px;color:#dc2626;border-color:#fca5a5" title="ડિલીટ / રદ કરો (Void)">🗑</button>`:''}
                           <button class="whatsapp-btn" data-wa-bill="${p.id}" style="padding:4px 8px;font-size:11px">💬</button>
                         </div>
                       </td>
@@ -560,6 +561,11 @@ async function renderPurchases(){
     // Wire quick Edit buttons on rows
     $$('[data-edit-bill]').forEach(btn => {
       btn.onclick = () => editPurchaseBill(+btn.dataset.editBill);
+    });
+
+    // Wire quick Void/Delete buttons on rows
+    $$('[data-void-bill]').forEach(btn => {
+      btn.onclick = () => voidBillModal(+btn.dataset.voidBill, btn.dataset.billNum);
     });
 
     // Wire quick WhatsApp buttons on rows
