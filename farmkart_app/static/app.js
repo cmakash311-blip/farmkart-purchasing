@@ -656,6 +656,53 @@ async function submitBill(e){e.preventDefault();const err=$('#bill-error');err.t
   if(!farmerName || farmerName.length < 2){err.textContent='ખેડૂતનું નામ દાખલ કરો (Farmer name is required).';return}
   if(!farmerVillage || farmerVillage.length < 2){err.textContent='ગામનું નામ દાખલ કરો (Village is required).';return}if(!confirm('Post this purchase bill permanently? Verify weight, rate and farmer before continuing.'))return;const cashPaid2=$('#paid-cash')?.value||'0';const payLaterCash=$('#pay-later-cash')?.value||'0';const payLaterDate=$('#pay-later-date')?.value||null;const chequeNum=$('#cheque-num')?.value||'';const chequeDate=$('#cheque-date')?.value||null;const chequeAmt=$('#cheque-amount')?.value||'0';const body={idem_key:savedSubmission,branch_id:Number($('#purchase-branch').value),farmer_id:selectedFarmerId,farmer_name:farmerName,farmer_village:farmerVillage,farmer_mobile:farmerMobile,rst_number:$('#rst').value,vehicle_number:$('#vehicle').value,weighbridge_charges:$('#charges').value,other_deductions:$('#deductions').value,market_transport_cost:$('#transport-cost')?.value||'0',unload_at_godown:Boolean($('#unload-godown')?.checked),round_adjustment:$('#adjust').value,purchase_date:$('#bill-date')?.value||null,notes:$('#notes').value,lines:all,cash_paid:cashPaid2,pay_later_cash:payLaterCash,pay_later_date:payLaterDate,cheque_number:chequeNum,cheque_date:chequeDate,cheque_amount:chequeAmt};const btn=$('#post-bill');btn.disabled=true;btn.textContent='Posting bill…';try{const result=await api('/purchases','POST',body);notify(`Purchase bill ${result.purchase.number} saved.`);await billModal(result.purchase.id);savedSubmission=token();navigate('purchases')}catch(ex){err.textContent=ex.message+' If the connection failed, check the purchase register before retrying.'}finally{btn.disabled=false;btn.textContent='Post final purchase bill →'}}
 
+
+function sendBillOnWhatsApp(p){
+  let mobile = (p.mobile || '').replace(/\D/g, '');
+  if(mobile.length === 10){
+    mobile = '91' + mobile;
+  } else if(mobile.length === 12 && mobile.startsWith('91')){
+    // already has 91
+  } else {
+    const input = prompt('ખેડૂતનો મોબાઈલ નંબર દાખલ કરો (Enter 10-digit mobile number):', p.mobile || '');
+    if(!input) return;
+    const clean = input.replace(/\D/g, '');
+    if(clean.length === 10) mobile = '91' + clean;
+    else if(clean.length === 12 && clean.startsWith('91')) mobile = clean;
+    else {
+      notify('અમાન્ય મોબાઈલ નંબર (Invalid mobile number)', 'bad');
+      return;
+    }
+  }
+
+  const linesSummary = (p.lines || []).map(l => 
+    `• ${l.variety}: ${l.bag_count||0} કટ્ટા | ${number(l.net_kg)} kg @ ₹${money(l.rate_per_20kg).replace('₹','')} = ₹${money(l.amount).replace('₹','')}`
+  ).join('\n');
+
+  const msg = 
+`🌾 *Farmkart Foods · ખરીદી પાવતી*
+━━━━━━━━━━━━━━━━━━━
+🧾 *બિલ નં:* ${p.number}
+📅 *તારીખ:* ${p.date}
+🏭 *ફેક્ટરી:* ${p.branch}
+👨‍🌾 *ખેડૂત:* ${p.farmer} (${p.village})
+${p.rst ? `📋 *RST નં:* ${p.rst}\n` : ''}${p.vehicle ? `🚛 *વાહન:* ${p.vehicle}\n` : ''}━━━━━━━━━━━━━━━━━━━
+📦 *કુલ કટ્ટા:* ${p.total_bags || 0}
+⚖️ *ચોખ્ખું વજન:* ${number(p.net_kg)} kg
+${linesSummary ? `\n*વિગત:*\n${linesSummary}\n` : ''}
+💰 *કુલ ખરીદી રકમ:* ${money(p.gross_value)}
+${Number(p.weighbridge_charges||0)>0 ? `🔻 કાંટા ખર્ચ: − ${money(p.weighbridge_charges)}\n` : ''}${Number(p.market_transport_cost||0)>0 ? `🔻 ટ્રાન્સપોર્ટ ખર્ચ: − ${money(p.market_transport_cost)}\n` : ''}${Number(p.other_deductions||0)>0 ? `🔻 અન્ય કપાત: − ${money(p.other_deductions)}\n` : ''}💵 *ચોખ્ખી ચૂકવવાપાત્ર રકમ:* *${money(p.payable)}*
+━━━━━━━━━━━━━━━━━━━
+💳 *ચૂકવણી વિગત:*
+• રોકડ (Cash): ${money(p.cash_paid || p.payments_summary?.cleared || 0)}
+${p.cheque_number ? `• ચેક (Cheque): ${money(p.cheque_amount)} (નં: ${p.cheque_number})\n` : ''}• બાકી રકમ (Due): ${money(p.payments_summary?.outstanding || 0)}
+━━━━━━━━━━━━━━━━━━━
+આભાર! *Farmkart Foods*`;
+
+  const url = `https://api.whatsapp.com/send?phone=${mobile}&text=${encodeURIComponent(msg)}`;
+  window.open(url, '_blank');
+}
+
 function numberToWordsINR(amount){
   const n = Math.floor(Number(amount)||0);
   if(n === 0) return 'Zero Rupees Only';
@@ -696,6 +743,7 @@ async function billModal(id){
         <div class="row" style="gap:8px">
           ${canVoid?`<button class="outline-btn" style="color:var(--bad, #dc2626);border-color:var(--bad, #dc2626)" id="void-bill-btn">Cancel / Void bill</button>`:''}
           <button class="outline-btn" style="background:#fefbf6;border-color:#b45309;color:#b45309;font-weight:700" id="print-thermal">🖨 80mm Thermal (થર્મલ)</button>
+          <button class="whatsapp-btn" id="send-whatsapp-btn">💬 Send WhatsApp</button>
           <button class="secondary" id="print-cheque-btn">🏦 Print Cheque (ચેક)</button>
           <button class="secondary" id="print-stationery-btn">📄 Predesigned Copy (સ્ટેશનરી)</button>
           <button class="primary" id="print-bill">Print receipt (A4/A5)</button>
@@ -763,6 +811,9 @@ async function billModal(id){
     },1000);
   }
   $('#print-bill').onclick=()=>window.print();
+  $('#send-whatsapp-btn').onclick = () => {
+    sendBillOnWhatsApp(p);
+  };
   $('#print-cheque-btn').onclick = () => {
     chequeLeafModal(p);
   };
