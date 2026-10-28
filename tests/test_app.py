@@ -755,3 +755,27 @@ def test_feature3_edit_purchase_bill(setup):
     })
     assert attempt_edit_void.status_code == 400
     assert 'voided' in attempt_edit_void.text.lower()
+
+
+def test_pending_cheques_count_endpoint(setup):
+    c = setup
+    h_buy = auth(c, 'hmtbuy')
+    fid = farmer(c, h_buy)
+
+    # 1. Check initial pending count
+    init_cnt = c.get('/api/payments/pending-count?branch_id=1', headers=h_buy).json()['pending_count']
+
+    # 2. Create bill with pending cheque
+    c.post('/api/purchases', headers=h_buy, json={
+        'idem_key': uuid.uuid4().hex,
+        'branch_id': 1,
+        'farmer_id': fid,
+        'lines': [{'variety': 'Java', 'bag_count': 10, 'bag_tare_kg': '1.000', 'gross_kg': '510.000', 'kapat_kg': '0.000', 'rate_per_20kg': '2000.00'}],
+        'cheque_number': 'BADGE-CHQ-1',
+        'cheque_date': '2026-10-27',
+        'cheque_amount': '15000.00'
+    })
+
+    # 3. Verify count incremented
+    new_cnt = c.get('/api/payments/pending-count?branch_id=1', headers=h_buy).json()['pending_count']
+    assert new_cnt == init_cnt + 1

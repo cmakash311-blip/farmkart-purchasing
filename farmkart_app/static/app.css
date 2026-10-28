@@ -41,3 +41,15 @@
   body.printing-stationery .stationery-preview-wrap{box-shadow:none!important}
 }
 
+
+.nav-badge {
+  background: #d97706;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 1px 7px;
+  border-radius: 12px;
+  margin-left: 8px;
+  line-height: 1.4;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}

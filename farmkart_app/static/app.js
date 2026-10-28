@@ -1,3 +1,18 @@
+async function updatePendingChequesBadge(){
+  try{
+    const bId = state.branch || '';
+    const res = await api('/payments/pending-count?branch_id=' + bId);
+    const badge = $('#pending-cheques-badge');
+    if(badge){
+      if(res && res.pending_count > 0){
+        badge.textContent = res.pending_count;
+        badge.style.display = 'inline-block';
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+  }catch(e){}
+}
 async function editPurchaseBill(id){
   try{
     const p = await api('/purchases/'+id);
@@ -64,11 +79,11 @@ function applyLanguage(){
 function notify(message,kind='good'){const e=$('#notice');e.textContent=message;e.className='notice '+kind;e.hidden=false;clearTimeout(notify.t);notify.t=setTimeout(()=>e.hidden=true,6500)}
 async function api(path,method='GET',body){let options={method,headers:{},credentials:'include'};if(body!==undefined){options.headers['Content-Type']='application/json';options.body=JSON.stringify(body)}if(!['GET','HEAD'].includes(method)&&state.csrf)options.headers['X-CSRF-Token']=state.csrf;if(state.token)options.headers['Authorization']='Bearer '+state.token;let r;try{r=await fetch('/api'+path,options)}catch{throw Error('Cannot reach the server. Check your internet connection. Do not submit the transaction repeatedly.')}let obj;try{obj=await r.json()}catch{throw Error('Invalid response from the server')}if(!r.ok){if(r.status===401&&path!=='/login'){showLogin()}throw Error(typeof obj.detail==='string'?obj.detail:'Request failed')}return obj}
 function showLogin(){state.user=null;state.token='';state.csrf='';sessionStorage.removeItem('fkf_token');localStorage.removeItem('fkf_token');$('#shell').hidden=true;$('#login').hidden=false;$('#password').value=''}
-async function setupLoggedInUser(me){state.user=me;if(me.csrf_token)state.csrf=me.csrf_token;$('#login').hidden=true;$('#shell').hidden=false;$('#user-name').textContent=me.name;$('#user-role').textContent=me.role;$('#users-nav').hidden=me.role!=='OWNER';$('#audit-nav').hidden=me.role!=='OWNER';applyLanguage();if($('#lang-toggle')){$('#lang-toggle').onclick=()=>{state.lang=state.lang==='gu'?'en':'gu';localStorage.setItem('fkf_lang',state.lang);applyLanguage();navigate(state.view||'dashboard')}};try{state.branches=await api('/branches')}catch{state.branches=[]}state.branch=me.role==='OWNER'?'':String(me.branch_id);const branchSelector=$('#branch-filter');branchSelector.innerHTML=(me.role==='OWNER'?choice('','All factories'): '')+state.branches.map(b=>choice(b.id,b.name)).join('');branchSelector.value=state.branch;branchSelector.disabled=me.role!=='OWNER';navigate('dashboard')}
+async function setupLoggedInUser(me){state.user=me;if(me.csrf_token)state.csrf=me.csrf_token;$('#login').hidden=true;$('#shell').hidden=false;$('#user-name').textContent=me.name;$('#user-role').textContent=me.role;$('#users-nav').hidden=me.role!=='OWNER';$('#audit-nav').hidden=me.role!=='OWNER';applyLanguage();if($('#lang-toggle')){$('#lang-toggle').onclick=()=>{state.lang=state.lang==='gu'?'en':'gu';localStorage.setItem('fkf_lang',state.lang);applyLanguage();navigate(state.view||'dashboard')}};try{state.branches=await api('/branches')}catch{state.branches=[]}state.branch=me.role==='OWNER'?'':String(me.branch_id);const branchSelector=$('#branch-filter');branchSelector.innerHTML=(me.role==='OWNER'?choice('','All factories'): '')+state.branches.map(b=>choice(b.id,b.name)).join('');branchSelector.value=state.branch;branchSelector.disabled=me.role!=='OWNER';updatePendingChequesBadge();navigate('dashboard')}
 async function initialize(){let me;try{me=await api('/me')}catch(e){showLogin();return}try{await setupLoggedInUser(me)}catch(err){console.error('Setup dashboard error:',err);$('#login').hidden=true;$('#shell').hidden=false;notify('Dashboard error: '+err.message,'bad')}}
 $('#login-form').addEventListener('submit',async e=>{e.preventDefault();const btn=e.target.querySelector('button');btn.disabled=true;$('#login-error').hidden=true;try{const data=await api('/login','POST',{username:$('#username').value,password:$('#password').value});if(data.token){state.token=data.token;sessionStorage.setItem('fkf_token',data.token);localStorage.setItem('fkf_token',data.token)}if(data.csrf_token)state.csrf=data.csrf_token;if(data.user){await setupLoggedInUser(data.user)}else{await initialize()}}catch(err){$('#login-error').textContent=err.message;$('#login-error').hidden=false}finally{btn.disabled=false}});
 $('#logout').onclick=async()=>{try{await api('/logout','POST',{})}finally{showLogin()}};
-$('#branch-filter').onchange=e=>{state.branch=e.target.value;navigate(state.view)};
+$('#branch-filter').onchange=e=>{state.branch=e.target.value;updatePendingChequesBadge();navigate(state.view)};
 $('#mobile-menu').onclick=()=>$('#sidebar').classList.toggle('open');
 $$('#navigation .nav').forEach(btn=>btn.onclick=()=>navigate(btn.dataset.view));
 function $$(s){return Array.from(document.querySelectorAll(s))}
@@ -935,7 +950,7 @@ async function submitBill(e){e.preventDefault();const err=$('#bill-error');err.t
   const farmerMobile = $('#farmer-mobile')?.value.trim() || '';
   const selectedFarmerId = $('#selected-farmer-id')?.value ? Number($('#selected-farmer-id').value) : null;
   if(!farmerName || farmerName.length < 2){err.textContent='ખેડૂતનું નામ દાખલ કરો (Farmer name is required).';return}
-  if(!farmerVillage || farmerVillage.length < 2){err.textContent='ગામનું નામ દાખલ કરો (Village is required).';return}const isEditing=Boolean(state.editingPurchaseId);if(!confirm(isEditing?'સુધારો સાચવવો છે? (Save amendments to this bill?)':'Post this purchase bill permanently? Verify weight, rate and farmer before continuing.'))return;const cashPaid2=$('#paid-cash')?.value||'0';const payLaterCash=$('#pay-later-cash')?.value||'0';const payLaterDate=$('#pay-later-date')?.value||null;const chequeNum=$('#cheque-num')?.value||'';const chequeDate=$('#cheque-date')?.value||null;const chequeAmt=$('#cheque-amount')?.value||'0';const body={branch_id:Number($('#purchase-branch').value),farmer_id:selectedFarmerId,farmer_name:farmerName,farmer_village:farmerVillage,farmer_mobile:farmerMobile,rst_number:$('#rst').value,vehicle_number:$('#vehicle').value,weighbridge_charges:$('#charges').value,other_deductions:$('#deductions').value,market_transport_cost:$('#transport-cost')?.value||'0',unload_at_godown:Boolean($('#unload-godown')?.checked),round_adjustment:$('#adjust').value,purchase_date:$('#bill-date')?.value||null,notes:$('#notes').value,lines:all,cash_paid:cashPaid2,pay_later_cash:payLaterCash,pay_later_date:payLaterDate,cheque_number:chequeNum,cheque_date:chequeDate,cheque_amount:chequeAmt};if(!isEditing)body.idem_key=savedSubmission;const btn=$('#post-bill');btn.disabled=true;btn.textContent=isEditing?'Updating bill…':'Posting bill…';try{const url=isEditing?`/purchases/${state.editingPurchaseId}`:'/purchases';const method=isEditing?'PUT':'POST';const result=await api(url,method,body);notify(isEditing?`Purchase bill ${result.purchase.number} updated.`:`Purchase bill ${result.purchase.number} saved.`);state.editingPurchaseId=null;state.editingPurchaseData=null;await billModal(result.purchase.id);savedSubmission=token();navigate('purchases')}catch(ex){err.textContent=ex.message+' If the connection failed, check the purchase register before retrying.'}finally{btn.disabled=false;btn.textContent=isEditing?'સુધારો સાચવો (Update bill) →':'Post final purchase bill →'}}
+  if(!farmerVillage || farmerVillage.length < 2){err.textContent='ગામનું નામ દાખલ કરો (Village is required).';return}const isEditing=Boolean(state.editingPurchaseId);if(!confirm(isEditing?'સુધારો સાચવવો છે? (Save amendments to this bill?)':'Post this purchase bill permanently? Verify weight, rate and farmer before continuing.'))return;const cashPaid2=$('#paid-cash')?.value||'0';const payLaterCash=$('#pay-later-cash')?.value||'0';const payLaterDate=$('#pay-later-date')?.value||null;const chequeNum=$('#cheque-num')?.value||'';const chequeDate=$('#cheque-date')?.value||null;const chequeAmt=$('#cheque-amount')?.value||'0';const body={branch_id:Number($('#purchase-branch').value),farmer_id:selectedFarmerId,farmer_name:farmerName,farmer_village:farmerVillage,farmer_mobile:farmerMobile,rst_number:$('#rst').value,vehicle_number:$('#vehicle').value,weighbridge_charges:$('#charges').value,other_deductions:$('#deductions').value,market_transport_cost:$('#transport-cost')?.value||'0',unload_at_godown:Boolean($('#unload-godown')?.checked),round_adjustment:$('#adjust').value,purchase_date:$('#bill-date')?.value||null,notes:$('#notes').value,lines:all,cash_paid:cashPaid2,pay_later_cash:payLaterCash,pay_later_date:payLaterDate,cheque_number:chequeNum,cheque_date:chequeDate,cheque_amount:chequeAmt};if(!isEditing)body.idem_key=savedSubmission;const btn=$('#post-bill');btn.disabled=true;btn.textContent=isEditing?'Updating bill…':'Posting bill…';try{const url=isEditing?`/purchases/${state.editingPurchaseId}`:'/purchases';const method=isEditing?'PUT':'POST';const result=await api(url,method,body);notify(isEditing?`Purchase bill ${result.purchase.number} updated.`:`Purchase bill ${result.purchase.number} saved.`);state.editingPurchaseId=null;state.editingPurchaseData=null;updatePendingChequesBadge();await billModal(result.purchase.id);savedSubmission=token();navigate('purchases')}catch(ex){err.textContent=ex.message+' If the connection failed, check the purchase register before retrying.'}finally{btn.disabled=false;btn.textContent=isEditing?'સુધારો સાચવો (Update bill) →':'Post final purchase bill →'}}
 
 
 function sendBillOnWhatsApp(p){
@@ -1146,7 +1161,7 @@ function voidBillModal(id,number){
     try{
       const reason=$('#void-reason').value.trim();
       await api(`/purchases/${id}/void`,'POST',{reason});
-      notify(`Bill ${number} has been voided.`);
+      notify(`Bill ${number} has been voided.`);updatePendingChequesBadge();
       await billModal(id);
       if(state.view==='purchases')navigate('purchases');
     }catch(err){
@@ -1465,7 +1480,7 @@ async function renderPayments(){
       try{
         const payload = { items: Array.from(modifiedRows.values()) };
         const res = await api('/payments/batch-status', 'POST', payload);
-        notify(`Successfully updated ${res.updated_count} payment instrument(s).`);
+        notify(`Successfully updated ${res.updated_count} payment instrument(s).`);updatePendingChequesBadge();
         await loadData();
       }catch(err){
         notify(err.message, 'bad');

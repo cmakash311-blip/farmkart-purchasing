@@ -763,6 +763,20 @@ def batch_change_payments(data:BatchPaymentStatusIn,user:User=Depends(require_us
     db.commit()
     return {'ok':True,'updated_count':len(updated),'updated_ids':updated}
 
+@app.get('/api/payments/pending-count')
+def pending_cheques_count(branch_id: int | None = None, user: User = Depends(require_user), db: Session = Depends(get_db)):
+    if branch_id:
+        check_branch(user, branch_id)
+    q = scoped(select(func.count(Payment.id)).join(Payment.purchase).where(
+        Payment.status == 'PENDING',
+        Payment.method == 'CHEQUE',
+        Purchase.status != 'VOID'
+    ), user, Purchase)
+    if branch_id:
+        q = q.where(Purchase.branch_id == branch_id)
+    count = db.scalar(q) or 0
+    return {'pending_count': count}
+
 @app.get('/api/payments')
 def payments(branch_id:int|None=None,status:str='',month:str='',user:User=Depends(require_user),db:Session=Depends(get_db)):
     if branch_id:check_branch(user,branch_id)
