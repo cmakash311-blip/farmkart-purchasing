@@ -775,8 +775,36 @@ async function renderNew(){if(!['OWNER','PURCHASE'].includes(state.user.role)){$
   });
   nameInput.addEventListener('change', checkFarmerMatch);
 
-  $('#purchase-form').oninput=calculate;$('#purchase-form').onsubmit=submitBill}
-function addLine(init=null){if(state.lineCount>=25){notify('Maximum 25 items per bill.','bad');return}const idx=state.lineCount++;const e=document.createElement('div');e.className='item-grid';e.innerHTML=`<label>Variety<input class="line-variety" value="${init?text(init.variety):'Java'}" maxlength="80" required list="varieties"><datalist id="varieties"><option value="Java"><option value="Bold"><option value="TJ"><option value="In-shell"><option value="Other"></datalist></label><label>Bags (કટ્ટા)<input class="line-bags" type="number" min="0" max="100000" step="1" value="${init?init.bag_count:0}" placeholder="0"></label><label>Tare/bag (kg)<input class="line-tare" type="number" min="0" max="50" step="0.001" value="${init?init.bag_tare_kg:'1.000'}" placeholder="1.000"></label><label>Gross kg<input class="line-gross" type="number" min="0.001" max="10000000" step="0.001" required value="${init?init.gross_kg:''}" placeholder="1000"></label><label>Kapat kg<input class="line-kapat" type="number" min="0" max="10000000" step="0.001" value="${init?init.kapat_kg:0}" placeholder="0"></label><label>Rate / 20kg (₹)<input class="line-rate" type="number" min="0.01" max="10000000" step="0.01" required value="${init?init.rate_per_20kg:''}" placeholder="2200"></label><button type="button" class="mini-button" title="Remove line">×</button>`;e.querySelector('button').onclick=()=>{e.remove();calculate()};$('#purchase-lines').append(e);calculate()}
+  $('#purchase-form').oninput=calculate;$('#purchase-form').onsubmit=submitBill;
+
+  // Rapid Weighbridge Enter-Key Navigation & Auto-Select
+  const purchaseForm = $('#purchase-form');
+  if(purchaseForm){
+    purchaseForm.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter'){
+        const target = e.target;
+        if(target.tagName === 'TEXTAREA' || target.type === 'submit' || target.tagName === 'BUTTON') return;
+        e.preventDefault();
+        const focusables = Array.from(purchaseForm.querySelectorAll('input:not([type="hidden"]):not([readonly]):not([disabled]), select:not([disabled])'));
+        const index = focusables.indexOf(target);
+        if(index > -1 && index + 1 < focusables.length){
+          const nextEl = focusables[index + 1];
+          nextEl.focus();
+          if(nextEl.select) nextEl.select();
+        } else if(index === focusables.length - 1){
+          $('#post-bill')?.focus();
+        }
+      }
+    });
+
+    purchaseForm.addEventListener('focusin', (e) => {
+      if(e.target.tagName === 'INPUT' && ['number', 'text'].includes(e.target.type)){
+        e.target.select();
+      }
+    });
+  }
+}
+function addLine(init=null){if(state.lineCount>=25){notify('Maximum 25 items per bill.','bad');return}const idx=state.lineCount++;const e=document.createElement('div');e.className='item-grid';e.innerHTML=`<label>Variety<input class="line-variety" value="${init?text(init.variety):'Java'}" maxlength="80" required list="varieties"><datalist id="varieties"><option value="Java"><option value="Bold"><option value="G-20"><option value="મગફળી - 24"><option value="TJ"><option value="PHUT 04"><option value="PHUT 12"><option value="In-shell"><option value="Other"></datalist></label><label>Bags (કટ્ટા)<input class="line-bags" type="number" min="0" max="100000" step="1" value="${init?init.bag_count:0}" placeholder="0"></label><label>Tare/bag (kg)<input class="line-tare" type="number" min="0" max="50" step="0.001" value="${init?init.bag_tare_kg:'1.000'}" placeholder="1.000"></label><label>Gross kg<input class="line-gross" type="number" min="0.001" max="10000000" step="0.001" required value="${init?init.gross_kg:''}" placeholder="1000"></label><label>Kapat kg<input class="line-kapat" type="number" min="0" max="10000000" step="0.001" value="${init?init.kapat_kg:0}" placeholder="0"></label><label>Rate / 20kg (₹)<input class="line-rate" type="number" min="0.01" max="10000000" step="0.01" required value="${init?init.rate_per_20kg:''}" placeholder="2200"></label><button type="button" class="mini-button" title="Remove line">×</button>`;e.querySelector('button').onclick=()=>{e.remove();calculate()};$('#purchase-lines').append(e);calculate()}
 function lines(){return $$('#purchase-lines .item-grid').map(r=>({variety:r.querySelector('.line-variety').value.trim(),bag_count:Math.max(0,parseInt(r.querySelector('.line-bags').value||0,10)),bag_tare_kg:r.querySelector('.line-tare').value||'0',gross_kg:r.querySelector('.line-gross').value,kapat_kg:r.querySelector('.line-kapat').value||'0',rate_per_20kg:r.querySelector('.line-rate').value}))}
 function calculate(){
   const all=lines(),n=v=>Number(v||0);
