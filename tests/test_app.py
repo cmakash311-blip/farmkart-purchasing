@@ -572,6 +572,46 @@ def test_point3_market_transport_and_godown_unloading(setup):
     assert detail['market_transport_cost'] == '350.00'
     assert detail['unload_at_godown'] is True
 
+def test_point4_bill_date_picker_and_next_sequence_preview(setup):
+    """Point 4: Bill date picker and next sequence number preview endpoint."""
+    c = setup
+    h = auth(c, 'hmtbuy')
+    fid = farmer(c, h)
+
+    # 1. Check next sequence number endpoint for Branch 1
+    next_res = c.get('/api/purchases/next-number?branch_id=1', headers=h)
+    assert next_res.status_code == 200, next_res.text
+    seq = next_res.json()
+    assert 'HMT/' in seq['formatted']
+    assert seq['branch_code'] == 'HMT'
+    expected_num = seq['next_number']
+
+    # 2. Post a bill with custom back-dated purchase_date (e.g. 2026-10-15)
+    custom_date = '2026-10-15'
+    res = c.post('/api/purchases', headers=h, json={
+        'idem_key': uuid.uuid4().hex,
+        'branch_id': 1,
+        'farmer_id': fid,
+        'purchase_date': custom_date,
+        'rst_number': 'RST-DATE-01',
+        'lines': [{
+            'variety': 'Java',
+            'bag_count': 0,
+            'bag_tare_kg': '0.000',
+            'gross_kg': '500.000',
+            'rate_per_20kg': '2000.00'
+        }]
+    })
+    assert res.status_code == 201, res.text
+    p = res.json()['purchase']
+    assert p['date'] == custom_date
+    assert f'{expected_num:06d}' in p['number']
+
+    # 3. Next sequence number should now be incremented
+    next_res_after = c.get('/api/purchases/next-number?branch_id=1', headers=h).json()
+    assert next_res_after['next_number'] == expected_num + 1
+
+
 
 
 

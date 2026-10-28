@@ -116,6 +116,8 @@ class PurchaseIn(BaseModel):
     farmer_mobile:str|None=Field(default=None,max_length=20)
     rst_number:str=Field(default='',max_length=80)
     vehicle_number:str=Field(default='',max_length=60)
+    # Point 4: Bill Date Picker
+    purchase_date:date|None=None
     weighbridge_charges:Decimal=Field(default=Decimal('0'),ge=0,le=10000000)
     other_deductions:Decimal=Field(default=Decimal('0'),ge=0,le=10000000)
     # Point 3: Transport & Godown unloading costs
@@ -406,13 +408,14 @@ def add_purchase(data:PurchaseIn,user:User=Depends(require_user),db:Session=Depe
     # SQLite is for local development only, and is not multi-factory safe.
     try:
         db.execute(select(Branch).where(Branch.id==branch.id).with_for_update()).scalar_one()
-        fyear=fy(today())
+        actual_date = data.purchase_date or today()
+        fyear=fy(actual_date)
         seq=db.scalar(select(BillSequence).where(BillSequence.branch_id==branch.id,BillSequence.fy==fyear))
         if not seq:
             seq=BillSequence(branch_id=branch.id,fy=fyear,last_number=0);db.add(seq);db.flush()
         seq.last_number+=1
         number=f'{branch.code}/{fyear}/{seq.last_number:06d}'
-        bill=Purchase(number=number,idem_key=data.idem_key,branch_id=branch.id,farmer_id=target_farmer_id,created_by=user.id,purchase_date=today(),rst_number=data.rst_number.strip(),vehicle_number=data.vehicle_number.strip(),total_bags=total_bags,gross_kg=gross,kapat_kg=kapat,net_kg=net,gross_value=gross_value,weighbridge_charges=weigh,other_deductions=other,round_adjustment=adjust,payable=payable,notes=data.notes.strip(),status='POSTED',cash_paid=d(data.cash_paid),pay_later_cash=d(data.pay_later_cash),pay_later_date=data.pay_later_date,market_transport_cost=transport,unload_at_godown=bool(data.unload_at_godown))
+        bill=Purchase(number=number,idem_key=data.idem_key,branch_id=branch.id,farmer_id=target_farmer_id,created_by=user.id,purchase_date=actual_date,rst_number=data.rst_number.strip(),vehicle_number=data.vehicle_number.strip(),total_bags=total_bags,gross_kg=gross,kapat_kg=kapat,net_kg=net,gross_value=gross_value,weighbridge_charges=weigh,other_deductions=other,round_adjustment=adjust,payable=payable,notes=data.notes.strip(),status='POSTED',cash_paid=d(data.cash_paid),pay_later_cash=d(data.pay_later_cash),pay_later_date=data.pay_later_date,market_transport_cost=transport,unload_at_godown=bool(data.unload_at_godown))
         for variety,bc,bt,g,k,n,r,a in computed:
             bill.lines.append(PurchaseLine(variety=variety,bag_count=bc,bag_tare_kg=bt,gross_kg=g,kapat_kg=k,net_kg=n,rate_per_20kg=r,line_amount=a))
         db.add(bill);db.flush()
@@ -455,6 +458,25 @@ def add_purchase(data:PurchaseIn,user:User=Depends(require_user),db:Session=Depe
             check_branch(user,existing.branch_id)
             return {'purchase':purchase_view(existing,True),'repeated_request':True}
         raise HTTPException(409,'Purchase conflict. Please retry with the same request key.')
+
+@app.get('/api/purchases/next-number')
+def next_purchase_number(branch_id:int,purchase_date:date|None=None,user:User=Depends(require_user),db:Session=Depends(get_db)):
+    check_branch(user,branch_id)
+    b=db.get(Branch,branch_id)
+    if not b: raise HTTPException(404,'Branch not found')
+    target_date = purchase_date or today()
+    fyear = fy(target_date)
+    seq = db.scalar(select(BillSequence).where(BillSequence.branch_id==branch_id,BillSequence.fy==fyear))
+    next_num = (seq.last_number + 1) if seq else 1
+    formatted = f'{b.code}/{fyear}/{next_num:06d}'
+    return {
+        'branch_id': b.id,
+        'branch_code': b.code,
+        'fy': fyear,
+        'next_number': next_num,
+        'formatted': formatted,
+        'date': str(target_date)
+    }
 
 @app.get('/api/purchases')
 def purchases(branch_id:int|None=None,search:str='',date_from:date|None=None,date_to:date|None=None,status:str='',limit:int=Query(100,ge=1,le=1000),offset:int=Query(0,ge=0),user:User=Depends(require_user),db:Session=Depends(get_db)):
