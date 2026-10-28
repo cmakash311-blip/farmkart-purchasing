@@ -31,7 +31,11 @@ def new_session(db: Session, user: User) -> tuple[str, SessionToken]:
     return token, row
 
 def get_session(request: Request, db: Session = Depends(get_db)) -> tuple[User,SessionToken]:
-    token = request.cookies.get(COOKIE_NAME,'')
+    auth_header = request.headers.get('Authorization', '')
+    if auth_header.startswith('Bearer '):
+        token = auth_header[7:].strip()
+    else:
+        token = request.cookies.get(COOKIE_NAME, '')
     if not token: raise HTTPException(401, 'Please sign in')
     session = db.scalar(select(SessionToken).where(SessionToken.token_hash==hash_token(token)))
     if not session or session.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):

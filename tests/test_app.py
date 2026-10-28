@@ -48,6 +48,16 @@ def test_login_and_csrf(setup):
     assert c.get('/api/me').status_code==401
     wrong=c.post('/api/login',json={'username':'owner','password':'wrong'})
     assert wrong.status_code==401
+    login_resp=c.post('/api/login',json={'username':'owner','password':'VeryStrongPass#123'})
+    assert login_resp.status_code==200
+    token=login_resp.json().get('token')
+    assert token and len(token) > 20
+    # Test Bearer token access on a new client instance without cookies
+    with TestClient(app) as bearer_client:
+        assert bearer_client.get('/api/me').status_code==401
+        bearer_me=bearer_client.get('/api/me',headers={'Authorization':f'Bearer {token}'})
+        assert bearer_me.status_code==200
+        assert bearer_me.json()['username']=='owner'
     h=auth(c,'owner')
     assert c.get('/api/me').status_code==200
     assert c.post('/api/farmers',json={'name':'N','village':'G'}).status_code==403

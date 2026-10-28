@@ -17,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 from .db import get_db
 from .models import Branch, User, SessionToken, Farmer, BillSequence, Purchase, PurchaseLine, Payment, Audit
-from .security import COOKIE_NAME, hash_token, check_password, encode_password, new_session, require_user, check_branch, allow, can_access
+from .security import COOKIE_NAME, hash_token, check_password, encode_password, new_session, get_session, require_user, check_branch, allow, can_access
 
 # Fail closed if someone mistakenly starts the pilot in production mode with demo settings.
 if os.getenv('APP_ENV') == 'production':
@@ -161,28 +161,33 @@ def static(filename:str):
 def health(): return {'status':'ok'}
 
 @app.post('/api/login')
-def login(data:LoginIn, response:Response, db:Session=Depends(get_db)):
+def login(request:Request, data:LoginIn, response:Response, db:Session=Depends(get_db)):
     user=db.scalar(select(User).where(User.username==data.username.strip().lower()))
     if not user or not user.active or not check_password(data.password,user.password_hash):
         raise HTTPException(401,'Incorrect username or password')
     token, record = new_session(db,user)
-    secure=os.getenv('COOKIE_SECURE','0')=='1'
-    response.set_cookie(COOKIE_NAME,token,httponly=True,secure=secure,samesite='strict',max_age=12*3600,path='/')
-    return {'ok':True,'csrf_token':record.csrf_token}
+    is_https = (
+        request.headers.get('x-forwarded-proto') == 'https' or
+        request.url.scheme == 'https' or
+        os.getenv('COOKIE_SECURE', '0') == '1'
+    )
+    response.set_cookie(COOKIE_NAME, token, httponly=True, secure=is_https, samesite='lax', max_age=12*3600, path='/')
+    return {'ok':True, 'token': token, 'csrf_token':record.csrf_token}
 
 @app.post('/api/logout')
-def logout(request:Request,response:Response,user:User=Depends(require_user), db:Session=Depends(get_db)):
-    token=request.cookies.get(COOKIE_NAME,'')
-    row=db.scalar(select(SessionToken).where(SessionToken.token_hash==hash_token(token)))
-    if row: db.delete(row);db.commit()
+def logout(request:Request, response:Response, db:Session=Depends(get_db)):
+    auth_header = request.headers.get('Authorization', '')
+    token = auth_header[7:].strip() if auth_header.startswith('Bearer ') else request.cookies.get(COOKIE_NAME, '')
+    if token:
+        row=db.scalar(select(SessionToken).where(SessionToken.token_hash==hash_token(token)))
+        if row: db.delete(row); db.commit()
     response.delete_cookie(COOKIE_NAME,path='/')
     return {'ok':True}
 
 @app.get('/api/me')
-def me(request:Request,user:User=Depends(require_user),db:Session=Depends(get_db)):
-    token=request.cookies.get(COOKIE_NAME,'')
-    row=db.scalar(select(SessionToken).where(SessionToken.token_hash==hash_token(token)))
-    return {'id':user.id,'name':user.full_name,'username':user.username,'role':user.role,'branch_id':user.branch_id,'csrf_token':row.csrf_token}
+def me(user_and_session: tuple[User, SessionToken] = Depends(get_session)):
+    user, session = user_and_session
+    return {'id':user.id,'name':user.full_name,'username':user.username,'role':user.role,'branch_id':user.branch_id,'csrf_token':session.csrf_token}
 
 @app.get('/api/branches')
 def branches(user:User=Depends(require_user),db:Session=Depends(get_db)):
