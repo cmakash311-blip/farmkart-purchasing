@@ -72,6 +72,10 @@ class Purchase(Base):
     notes: Mapped[str] = mapped_column(Text, default='')
     status: Mapped[str] = mapped_column(String(20), default='POSTED')
     total_bags: Mapped[int] = mapped_column(Integer, default=0)
+    # Point 1: Payment settlement captured at bill-creation time
+    cash_paid: Mapped[Decimal] = mapped_column(Numeric(15,2), default=Decimal('0'))
+    pay_later_cash: Mapped[Decimal] = mapped_column(Numeric(15,2), default=Decimal('0'))
+    pay_later_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     farmer: Mapped[Farmer] = relationship()
     branch: Mapped[Branch] = relationship()

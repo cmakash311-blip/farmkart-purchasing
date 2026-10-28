@@ -74,7 +74,9 @@ def pay_summary(bill: Purchase):
     return {'cleared':inr(cleared),'pending':inr(pending),'outstanding':inr(max(Decimal('0'),d(bill.payable)-cleared)), 'unallocated':inr(max(Decimal('0'),d(bill.payable)-cleared-pending))}
 
 def purchase_view(p:Purchase,detail=False):
-    data={'id':p.id,'number':p.number,'date':str(p.purchase_date),'branch_id':p.branch_id,'branch':p.branch.name,'farmer_id':p.farmer_id,'farmer':p.farmer.name,'village':p.farmer.village,'mobile':p.farmer.mobile,'rst':p.rst_number,'vehicle':p.vehicle_number,'total_bags':getattr(p,'total_bags',0) or 0,'gross_kg':kg(p.gross_kg),'kapat_kg':kg(p.kapat_kg),'net_kg':kg(p.net_kg),'gross_value':inr(p.gross_value),'weighbridge_charges':inr(p.weighbridge_charges),'other_deductions':inr(p.other_deductions),'round_adjustment':inr(p.round_adjustment),'payable':inr(p.payable),'status':p.status,'notes':p.notes,'payments_summary':pay_summary(p)}
+    # Point 1: Get cheque details from Payment records for receipt display
+    cheque_pay=next((x for x in p.payments if x.method=='CHEQUE'),None)
+    data={'id':p.id,'number':p.number,'date':str(p.purchase_date),'branch_id':p.branch_id,'branch':p.branch.name,'farmer_id':p.farmer_id,'farmer':p.farmer.name,'village':p.farmer.village,'mobile':p.farmer.mobile,'rst':p.rst_number,'vehicle':p.vehicle_number,'total_bags':getattr(p,'total_bags',0) or 0,'gross_kg':kg(p.gross_kg),'kapat_kg':kg(p.kapat_kg),'net_kg':kg(p.net_kg),'gross_value':inr(p.gross_value),'weighbridge_charges':inr(p.weighbridge_charges),'other_deductions':inr(p.other_deductions),'round_adjustment':inr(p.round_adjustment),'payable':inr(p.payable),'status':p.status,'notes':p.notes,'payments_summary':pay_summary(p),'cash_paid':inr(getattr(p,'cash_paid',Decimal('0')) or Decimal('0')),'pay_later_cash':inr(getattr(p,'pay_later_cash',Decimal('0')) or Decimal('0')),'pay_later_date':str(getattr(p,'pay_later_date',None) or ''),'cheque_number':cheque_pay.reference if cheque_pay else '','cheque_date':str(cheque_pay.instrument_date or '') if cheque_pay else '','cheque_amount':inr(cheque_pay.amount) if cheque_pay else inr(Decimal('0'))}
     if detail:
         data['lines']=[{'variety':x.variety,'bag_count':getattr(x,'bag_count',0) or 0,'bag_tare_kg':kg(getattr(x,'bag_tare_kg',0) or 0),'gross_kg':kg(x.gross_kg),'kapat_kg':kg(x.kapat_kg),'net_kg':kg(x.net_kg),'rate_per_20kg':inr(x.rate_per_20kg),'amount':inr(x.line_amount)} for x in p.lines]
         data['payments']=[payment_view(x,p.number,p.farmer.name,p.branch_id) for x in p.payments]
@@ -115,6 +117,13 @@ class PurchaseIn(BaseModel):
     round_adjustment:Decimal=Field(default=Decimal('0'),ge=-10000000,le=10000000)
     notes:str=Field(default='',max_length=1000)
     lines:list[LineIn]=Field(min_length=1,max_length=25)
+    # Point 1: Payment settlement at time of bill creation
+    cash_paid:Decimal=Field(default=Decimal('0'),ge=0,le=1000000000)
+    pay_later_cash:Decimal=Field(default=Decimal('0'),ge=0,le=1000000000)
+    pay_later_date:date|None=None
+    cheque_number:str=Field(default='',max_length=30)
+    cheque_date:date|None=None
+    cheque_amount:Decimal=Field(default=Decimal('0'),ge=0,le=1000000000)
 
 class PaymentIn(BaseModel):
     idem_key:str=Field(min_length=16,max_length=100)
@@ -368,10 +377,38 @@ def add_purchase(data:PurchaseIn,user:User=Depends(require_user),db:Session=Depe
             seq=BillSequence(branch_id=branch.id,fy=fyear,last_number=0);db.add(seq);db.flush()
         seq.last_number+=1
         number=f'{branch.code}/{fyear}/{seq.last_number:06d}'
-        bill=Purchase(number=number,idem_key=data.idem_key,branch_id=branch.id,farmer_id=data.farmer_id,created_by=user.id,purchase_date=today(),rst_number=data.rst_number.strip(),vehicle_number=data.vehicle_number.strip(),total_bags=total_bags,gross_kg=gross,kapat_kg=kapat,net_kg=net,gross_value=gross_value,weighbridge_charges=weigh,other_deductions=other,round_adjustment=adjust,payable=payable,notes=data.notes.strip(),status='POSTED')
+        bill=Purchase(number=number,idem_key=data.idem_key,branch_id=branch.id,farmer_id=data.farmer_id,created_by=user.id,purchase_date=today(),rst_number=data.rst_number.strip(),vehicle_number=data.vehicle_number.strip(),total_bags=total_bags,gross_kg=gross,kapat_kg=kapat,net_kg=net,gross_value=gross_value,weighbridge_charges=weigh,other_deductions=other,round_adjustment=adjust,payable=payable,notes=data.notes.strip(),status='POSTED',cash_paid=d(data.cash_paid),pay_later_cash=d(data.pay_later_cash),pay_later_date=data.pay_later_date)
         for variety,bc,bt,g,k,n,r,a in computed:
             bill.lines.append(PurchaseLine(variety=variety,bag_count=bc,bag_tare_kg=bt,gross_kg=g,kapat_kg=k,net_kg=n,rate_per_20kg=r,line_amount=a))
         db.add(bill);db.flush()
+        # Point 1: Auto-create payment records from bill-time settlement
+        cash_paid=d(data.cash_paid)
+        cheque_amt=d(data.cheque_amount)
+        total_settlement=cash_paid+cheque_amt
+        if total_settlement>payable:
+            raise HTTPException(422,f'Cash + cheque settlement (₹{inr(total_settlement)}) exceeds farmer payable (₹{inr(payable)})')
+        if cash_paid>Decimal('0'):
+            db.add(Payment(
+                idem_key=f'{data.idem_key}-cash',
+                purchase_id=bill.id,
+                created_by=user.id,
+                method='CASH',
+                status='CLEARED',
+                amount=cash_paid,
+                reference='Cash paid on purchase',
+                instrument_date=None
+            ))
+        if cheque_amt>Decimal('0') and data.cheque_number.strip():
+            db.add(Payment(
+                idem_key=f'{data.idem_key}-cheq',
+                purchase_id=bill.id,
+                created_by=user.id,
+                method='CHEQUE',
+                status='PENDING',
+                amount=cheque_amt,
+                reference=data.cheque_number.strip(),
+                instrument_date=data.cheque_date
+            ))
         audit(db,user,branch.id,'POST_PURCHASE','purchase',bill.id,number)
         db.commit()
         loaded=db.scalar(select(Purchase).options(selectinload(Purchase.lines),selectinload(Purchase.payments),selectinload(Purchase.branch),selectinload(Purchase.farmer)).where(Purchase.id==bill.id))

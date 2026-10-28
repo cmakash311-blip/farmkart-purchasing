@@ -11,4 +11,14 @@
 .thermal-receipt .amount-line.final{font-size:14px!important;border-top:2px solid #000!important;padding-top:4px!important}
 .thermal-receipt .receipt-foot{margin-top:12px!important;padding-top:10px!important;border-top:1px dashed #000!important;font-size:9px!important}
 @media print{body.printing-thermal @page{size:80mm auto;margin:2mm 0}body.printing-thermal .receipt{max-width:74mm!important;width:74mm!important;padding:1mm!important}}
+/* ── Point 1: Payment Settlement styles ── */
+.payment-panel{margin-top:0;border:1px solid #e9e4dc;background:#fffdf8}
+.form-grid.three{grid-template-columns:repeat(3,minmax(0,1fr));gap:17px}
+.cheque-box{margin-top:18px;background:#f5f0e8;border:1px solid #e0d4c0;border-radius:11px;padding:16px}
+.cheque-box-title{font-size:11px;font-weight:800;letter-spacing:1px;color:#7a5c3a;text-transform:uppercase;margin-bottom:12px}
+.cheque-auto-field{background:#f0ece4!important;color:#5a4a3a!important;cursor:not-allowed!important;font-weight:700}
+.cheque-helper{font-size:12px;color:#7a5535;font-weight:700;margin-top:8px;padding:6px 10px;background:#fdf6ec;border-radius:7px;border:1px solid #e8c98a;min-height:24px}
+.pay-preview{background:#f0f7ee;border:1px solid #b8d9b0;border-radius:11px;padding:16px;margin-top:18px}
+.pay-preview-title{font-size:11px;font-weight:800;letter-spacing:1px;color:#3a6b42;text-transform:uppercase;margin-bottom:10px}
+@media(max-width:770px){.form-grid.three{grid-template-columns:1fr}.cheque-box{padding:12px}}
 

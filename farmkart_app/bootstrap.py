@@ -22,6 +22,19 @@ def migrate_db():
             if 'bag_tare_kg' not in cols:
                 conn.execute(text("ALTER TABLE purchase_lines ADD COLUMN bag_tare_kg NUMERIC(15,3) DEFAULT 0"))
                 conn.commit()
+        # Point 1 Migration: payment settlement columns on purchases table
+        # cash_paid, pay_later_cash, pay_later_date stored on purchase row for fast receipt display
+        if 'purchases' in tables:
+            cols = [c['name'] for c in inspector.get_columns('purchases')]
+            if 'cash_paid' not in cols:
+                conn.execute(text("ALTER TABLE purchases ADD COLUMN cash_paid NUMERIC(15,2) DEFAULT 0"))
+                conn.commit()
+            if 'pay_later_cash' not in cols:
+                conn.execute(text("ALTER TABLE purchases ADD COLUMN pay_later_cash NUMERIC(15,2) DEFAULT 0"))
+                conn.commit()
+            if 'pay_later_date' not in cols:
+                conn.execute(text("ALTER TABLE purchases ADD COLUMN pay_later_date DATE"))
+                conn.commit()
 
 def initialize():
     Base.metadata.create_all(engine)
