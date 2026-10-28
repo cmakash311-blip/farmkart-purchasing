@@ -295,3 +295,76 @@ def test_purchase_search_and_date_filtering(setup):
     # 6. Future date filter returns empty
     future=c.get('/api/purchases?date_from=2099-01-01').json()
     assert future==[]
+
+def test_gunny_bag_and_bardana_calculation(setup):
+    c=setup
+    h=auth(c,'owner')
+    fid=farmer(c,h)
+    
+    # 1. Validation: deductions equal or exceed gross
+    fail_res=c.post('/api/purchases',headers=h,json={
+        'branch_id':1,'farmer_id':fid,'idem_key':uuid.uuid4().hex,
+        'lines':[{
+            'variety':'Java',
+            'bag_count':100,
+            'bag_tare_kg':'1.000',
+            'gross_kg':'100',  # 100 bags * 1kg = 100kg deduction == 100kg gross
+            'kapat_kg':'0',
+            'rate_per_20kg':'2000'
+        }]
+    })
+    assert fail_res.status_code==422
+    assert 'cannot equal or exceed gross' in fail_res.json()['detail']
+    
+    # 2. Valid multi-line bag tare calculation
+    res=c.post('/api/purchases',headers=h,json={
+        'branch_id':1,'farmer_id':fid,'idem_key':uuid.uuid4().hex,
+        'rst_number':'RST-BAG-01','vehicle_number':'GJ-09-BAGS',
+        'lines':[
+            {
+                'variety':'Java',
+                'bag_count':50,
+                'bag_tare_kg':'1.000',
+                'gross_kg':'1000.000',
+                'kapat_kg':'10.000',
+                'rate_per_20kg':'2000.00'
+            },
+            {
+                'variety':'Bold',
+                'bag_count':30,
+                'bag_tare_kg':'1.200',
+                'gross_kg':'600.000',
+                'kapat_kg':'0.000',
+                'rate_per_20kg':'1500.00'
+            }
+        ]
+    })
+    assert res.status_code==201, res.text
+    p=res.json()['purchase']
+    
+    # Verification of totals
+    assert p['total_bags']==80
+    assert p['gross_kg']=='1600.000'
+    assert p['kapat_kg']=='96.000'   # (50*1 + 10) + (30*1.2 + 0) = 60 + 36 = 96
+    assert p['net_kg']=='1504.000'   # 1600 - 96 = 1504
+    assert p['gross_value']=='136300.00'  # 940*100 + 564*75 = 94000 + 42300 = 136300
+    assert p['payable']=='136300.00'
+    
+    # Verification of detail lines
+    lines=p['lines']
+    assert len(lines)==2
+    assert lines[0]['bag_count']==50
+    assert lines[0]['bag_tare_kg']=='1.000'
+    assert lines[0]['net_kg']=='940.000'
+    assert lines[0]['amount']=='94000.00'
+    
+    assert lines[1]['bag_count']==30
+    assert lines[1]['bag_tare_kg']=='1.200'
+    assert lines[1]['net_kg']=='564.000'
+    assert lines[1]['amount']=='42300.00'
+    
+    # Verify in list API
+    purchases_list=c.get(f"/api/purchases?search={p['number']}").json()
+    assert len(purchases_list)==1
+    assert purchases_list[0]['total_bags']==80
+

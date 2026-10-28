@@ -1,12 +1,31 @@
 """Run: python -m farmkart_app.bootstrap init ; python -m farmkart_app.bootstrap user"""
 import argparse, getpass
-from sqlalchemy import select
+from sqlalchemy import select, inspect, text
 from .db import Base, engine, SessionLocal
 from .models import Branch, User
 from .security import encode_password
 
+def migrate_db():
+    with engine.connect() as conn:
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
+        if 'purchases' in tables:
+            cols = [c['name'] for c in inspector.get_columns('purchases')]
+            if 'total_bags' not in cols:
+                conn.execute(text("ALTER TABLE purchases ADD COLUMN total_bags INTEGER DEFAULT 0"))
+                conn.commit()
+        if 'purchase_lines' in tables:
+            cols = [c['name'] for c in inspector.get_columns('purchase_lines')]
+            if 'bag_count' not in cols:
+                conn.execute(text("ALTER TABLE purchase_lines ADD COLUMN bag_count INTEGER DEFAULT 0"))
+                conn.commit()
+            if 'bag_tare_kg' not in cols:
+                conn.execute(text("ALTER TABLE purchase_lines ADD COLUMN bag_tare_kg NUMERIC(15,3) DEFAULT 0"))
+                conn.commit()
+
 def initialize():
     Base.metadata.create_all(engine)
+    migrate_db()
     with SessionLocal.begin() as db:
         for code,name in [('HMT','Himatnagar'),('MDS','Modasa')]:
             if not db.scalar(select(Branch).where(Branch.code==code)):

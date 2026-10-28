@@ -74,9 +74,9 @@ def pay_summary(bill: Purchase):
     return {'cleared':inr(cleared),'pending':inr(pending),'outstanding':inr(max(Decimal('0'),d(bill.payable)-cleared)), 'unallocated':inr(max(Decimal('0'),d(bill.payable)-cleared-pending))}
 
 def purchase_view(p:Purchase,detail=False):
-    data={'id':p.id,'number':p.number,'date':str(p.purchase_date),'branch_id':p.branch_id,'branch':p.branch.name,'farmer_id':p.farmer_id,'farmer':p.farmer.name,'village':p.farmer.village,'mobile':p.farmer.mobile,'rst':p.rst_number,'vehicle':p.vehicle_number,'gross_kg':kg(p.gross_kg),'kapat_kg':kg(p.kapat_kg),'net_kg':kg(p.net_kg),'gross_value':inr(p.gross_value),'weighbridge_charges':inr(p.weighbridge_charges),'other_deductions':inr(p.other_deductions),'round_adjustment':inr(p.round_adjustment),'payable':inr(p.payable),'status':p.status,'notes':p.notes,'payments_summary':pay_summary(p)}
+    data={'id':p.id,'number':p.number,'date':str(p.purchase_date),'branch_id':p.branch_id,'branch':p.branch.name,'farmer_id':p.farmer_id,'farmer':p.farmer.name,'village':p.farmer.village,'mobile':p.farmer.mobile,'rst':p.rst_number,'vehicle':p.vehicle_number,'total_bags':getattr(p,'total_bags',0) or 0,'gross_kg':kg(p.gross_kg),'kapat_kg':kg(p.kapat_kg),'net_kg':kg(p.net_kg),'gross_value':inr(p.gross_value),'weighbridge_charges':inr(p.weighbridge_charges),'other_deductions':inr(p.other_deductions),'round_adjustment':inr(p.round_adjustment),'payable':inr(p.payable),'status':p.status,'notes':p.notes,'payments_summary':pay_summary(p)}
     if detail:
-        data['lines']=[{'variety':x.variety,'gross_kg':kg(x.gross_kg),'kapat_kg':kg(x.kapat_kg),'net_kg':kg(x.net_kg),'rate_per_20kg':inr(x.rate_per_20kg),'amount':inr(x.line_amount)} for x in p.lines]
+        data['lines']=[{'variety':x.variety,'bag_count':getattr(x,'bag_count',0) or 0,'bag_tare_kg':kg(getattr(x,'bag_tare_kg',0) or 0),'gross_kg':kg(x.gross_kg),'kapat_kg':kg(x.kapat_kg),'net_kg':kg(x.net_kg),'rate_per_20kg':inr(x.rate_per_20kg),'amount':inr(x.line_amount)} for x in p.lines]
         data['payments']=[payment_view(x,p.number,p.farmer.name,p.branch_id) for x in p.payments]
     return data
 
@@ -98,8 +98,10 @@ class FarmerIn(BaseModel):
 
 class LineIn(BaseModel):
     variety:str=Field(min_length=2,max_length=80)
+    bag_count:int=Field(default=0,ge=0,le=100000)
+    bag_tare_kg:Decimal=Field(default=Decimal('0'),ge=0,le=100)
     gross_kg:Decimal=Field(gt=0,le=10000000)
-    kapat_kg:Decimal=Field(ge=0,le=10000000)
+    kapat_kg:Decimal=Field(default=Decimal('0'),ge=0,le=10000000)
     rate_per_20kg:Decimal=Field(gt=0,le=10000000)
 
 class PurchaseIn(BaseModel):
@@ -209,14 +211,25 @@ def add_purchase(data:PurchaseIn,user:User=Depends(require_user),db:Session=Depe
     if not branch:raise HTTPException(422,'Factory not found')
     computed=[]
     for li in data.lines:
-        gross=d(li.gross_kg,KG);kap=d(li.kapat_kg,KG);rate=d(li.rate_per_20kg)
-        if kap>gross:raise HTTPException(422,'Kapat cannot exceed gross weight')
-        net=gross-kap
-        if net<=0:raise HTTPException(422,'Net weight must be positive')
+        gross=d(li.gross_kg,KG)
+        bag_cnt=int(li.bag_count)
+        bag_tare=d(li.bag_tare_kg,KG)
+        bag_deduction=d(bag_cnt*bag_tare,KG)
+        quality_kap=d(li.kapat_kg,KG)
+        total_line_kap=bag_deduction+quality_kap
+        rate=d(li.rate_per_20kg)
+        if total_line_kap>=gross:
+            raise HTTPException(422,'Total deductions (Bardana + Kapat) cannot equal or exceed gross weight')
+        net=gross-total_line_kap
+        if net<=0:
+            raise HTTPException(422,'Net weight must be positive')
         val=d(net*rate/Decimal('20'))
-        computed.append((li.variety.strip(),gross,kap,net,rate,val))
-    gross=sum((x[1] for x in computed),Decimal('0'));kapat=sum((x[2] for x in computed),Decimal('0'))
-    net=sum((x[3] for x in computed),Decimal('0'));gross_value=sum((x[5] for x in computed),Decimal('0'))
+        computed.append((li.variety.strip(),bag_cnt,bag_tare,gross,total_line_kap,net,rate,val))
+    total_bags=sum((x[1] for x in computed),0)
+    gross=sum((x[3] for x in computed),Decimal('0'))
+    kapat=sum((x[4] for x in computed),Decimal('0'))
+    net=sum((x[5] for x in computed),Decimal('0'))
+    gross_value=sum((x[7] for x in computed),Decimal('0'))
     weigh=d(data.weighbridge_charges);other=d(data.other_deductions);adjust=d(data.round_adjustment)
     payable=gross_value-weigh-other+adjust
     if payable<0 or payable>MAX:raise HTTPException(422,'Invalid final payable')
@@ -230,9 +243,9 @@ def add_purchase(data:PurchaseIn,user:User=Depends(require_user),db:Session=Depe
             seq=BillSequence(branch_id=branch.id,fy=fyear,last_number=0);db.add(seq);db.flush()
         seq.last_number+=1
         number=f'{branch.code}/{fyear}/{seq.last_number:06d}'
-        bill=Purchase(number=number,idem_key=data.idem_key,branch_id=branch.id,farmer_id=data.farmer_id,created_by=user.id,purchase_date=today(),rst_number=data.rst_number.strip(),vehicle_number=data.vehicle_number.strip(),gross_kg=gross,kapat_kg=kapat,net_kg=net,gross_value=gross_value,weighbridge_charges=weigh,other_deductions=other,round_adjustment=adjust,payable=payable,notes=data.notes.strip(),status='POSTED')
-        for variety,g,k,n,r,a in computed:
-            bill.lines.append(PurchaseLine(variety=variety,gross_kg=g,kapat_kg=k,net_kg=n,rate_per_20kg=r,line_amount=a))
+        bill=Purchase(number=number,idem_key=data.idem_key,branch_id=branch.id,farmer_id=data.farmer_id,created_by=user.id,purchase_date=today(),rst_number=data.rst_number.strip(),vehicle_number=data.vehicle_number.strip(),total_bags=total_bags,gross_kg=gross,kapat_kg=kapat,net_kg=net,gross_value=gross_value,weighbridge_charges=weigh,other_deductions=other,round_adjustment=adjust,payable=payable,notes=data.notes.strip(),status='POSTED')
+        for variety,bc,bt,g,k,n,r,a in computed:
+            bill.lines.append(PurchaseLine(variety=variety,bag_count=bc,bag_tare_kg=bt,gross_kg=g,kapat_kg=k,net_kg=n,rate_per_20kg=r,line_amount=a))
         db.add(bill);db.flush()
         audit(db,user,branch.id,'POST_PURCHASE','purchase',bill.id,number)
         db.commit()
