@@ -241,3 +241,57 @@ def test_void_purchase_bill(setup):
     void_cleared=c.post(f'/api/purchases/{b2_id}/void',headers=h,json={'reason':'Mistake made but cash already given'})
     assert void_cleared.status_code==400
     assert 'cleared payment' in void_cleared.json()['detail']
+
+def test_purchase_search_and_date_filtering(setup):
+    c=setup
+    h=auth(c,'owner')
+    f1=c.post('/api/farmers',headers=h,json={'name':'Ramesh Patel','village':'Gambhoi','mobile':'9825000001'}).json()['id']
+    f2=c.post('/api/farmers',headers=h,json={'name':'Suresh Shah','village':'Tintoi','mobile':'9825000002'}).json()['id']
+    
+    b1=c.post('/api/purchases',headers=h,json={
+        'branch_id':1,'farmer_id':f1,'idem_key':uuid.uuid4().hex,
+        'rst_number':'RST-101','vehicle_number':'GJ-09-AB-1234',
+        'lines':[{'variety':'Java','gross_kg':'1000','kapat_kg':'0','rate_per_20kg':'2200'}]
+    }).json()['purchase']
+    
+    b2=c.post('/api/purchases',headers=h,json={
+        'branch_id':1,'farmer_id':f2,'idem_key':uuid.uuid4().hex,
+        'rst_number':'RST-202','vehicle_number':'GJ-01-XY-9999',
+        'lines':[{'variety':'Bold','gross_kg':'2000','kapat_kg':'10','rate_per_20kg':'2100'}]
+    }).json()['purchase']
+    
+    # 1. Search by vehicle number
+    s_veh=c.get('/api/purchases?search=AB-1234').json()
+    assert len(s_veh)==1
+    assert s_veh[0]['id']==b1['id']
+    
+    # 2. Search by RST
+    s_rst=c.get('/api/purchases?search=RST-202').json()
+    assert len(s_rst)==1
+    assert s_rst[0]['id']==b2['id']
+    
+    # 3. Search by farmer mobile
+    s_mob=c.get('/api/purchases?search=9825000001').json()
+    assert len(s_mob)==1
+    assert s_mob[0]['id']==b1['id']
+    
+    # 4. Filter by status
+    c.post(f"/api/purchases/{b1['id']}/void",headers=h,json={'reason':'Void for search test'})
+    s_void=c.get('/api/purchases?status=VOID').json()
+    assert any(x['id']==b1['id'] for x in s_void)
+    assert not any(x['id']==b2['id'] for x in s_void)
+    
+    s_post=c.get('/api/purchases?status=POSTED').json()
+    assert any(x['id']==b2['id'] for x in s_post)
+    assert not any(x['id']==b1['id'] for x in s_post)
+    
+    # 5. Pagination with limit and offset
+    page1=c.get('/api/purchases?limit=1&offset=0').json()
+    assert len(page1)==1
+    page2=c.get('/api/purchases?limit=1&offset=1').json()
+    assert len(page2)==1
+    assert page1[0]['id']!=page2[0]['id']
+    
+    # 6. Future date filter returns empty
+    future=c.get('/api/purchases?date_from=2099-01-01').json()
+    assert future==[]

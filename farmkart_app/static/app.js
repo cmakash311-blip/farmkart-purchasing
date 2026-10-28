@@ -37,11 +37,10 @@ function closeModal(){$('#modal').hidden=true;$('#modal-content').innerHTML=''}
 $('#modal-close').onclick=closeModal;$('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()});
 function farmerModal(done){openModal(`<h2>Register farmer</h2><p class="muted">This profile can be used at either factory.</p><form id="farmer-form" class="grid"><div class="form-grid two"><label>Farmer full name *<input name="name" required minlength="2" maxlength="140"></label><label>Village *<input name="village" required minlength="2" maxlength="140"></label><label>Mobile<input name="mobile" maxlength="20" inputmode="tel"></label><label>Cooperative (optional)<input name="cooperative" maxlength="140"></label></div><div id="farmer-modal-error" class="error-text"></div><button class="primary">Save farmer</button></form>`);$('#farmer-form').onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button');b.disabled=true;try{const fd=Object.fromEntries(new FormData(e.target));const farmer=await api('/farmers','POST',fd);closeModal();notify('Farmer registered successfully.');if(typeof done==='function')await done(farmer);else navigate('farmers')}catch(err){$('#farmer-modal-error').textContent=err.message}finally{b.disabled=false}}}
 async function renderPurchases(){
-  const bills=await api('/purchases'+scope());
   $('#view').innerHTML=title('Purchase register','Every posted bill has its own permanent factory-specific number.','<button id="new-from-reg" class="primary">+ New purchase</button>')+
     `<div class="panel">
-      <div class="filters">
-        <input id="bill-search" placeholder="Search bill / farmer / village / RST">
+      <div class="filters" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+        <input id="bill-search" placeholder="Search bill #, farmer, village, RST, vehicle..." style="min-width:240px;flex:1">
         <select id="bill-factory">
           <option value="">All visible factories</option>
           ${state.branches.map(b=>choice(b.id,b.name)).join('')}
@@ -51,44 +50,131 @@ async function renderPurchases(){
           <option value="POSTED">POSTED (Active)</option>
           <option value="VOID">VOID (Cancelled)</option>
         </select>
+        <div class="row" style="gap:6px;align-items:center">
+          <input type="date" id="bill-date-from" title="From date" style="width:145px">
+          <span style="color:var(--muted)">to</span>
+          <input type="date" id="bill-date-to" title="To date" style="width:145px">
+        </div>
+        <div class="row" style="gap:4px">
+          <button type="button" class="secondary" id="btn-today" style="padding:6px 10px;font-size:0.8rem">Today</button>
+          <button type="button" class="secondary" id="btn-month" style="padding:6px 10px;font-size:0.8rem">Month</button>
+          <button type="button" class="outline-btn" id="btn-clear-date" style="padding:6px 10px;font-size:0.8rem">Clear</button>
+        </div>
       </div>
+      <div id="purchase-count" style="margin:12px 0 6px;font-size:0.85rem;color:var(--muted)"></div>
       <div id="purchase-table"></div>
+      <div id="purchase-load-more" style="text-align:center;margin-top:16px" hidden>
+        <button class="secondary" id="load-more-btn">↓ Load more bills</button>
+      </div>
     </div>`;
+
   $('#bill-factory').value=state.branch;
-  function display(){
-    const q=$('#bill-search').value.toLowerCase().trim(),b=$('#bill-factory').value,st=$('#bill-status-filter').value;
-    let rows=bills.filter(p=>
-      (!b||String(p.branch_id)===b)&&
-      (!st||p.status===st)&&
-      [p.number,p.farmer,p.village,p.rst].some(x=>String(x).toLowerCase().includes(q))
-    );
-    $('#purchase-table').innerHTML=table(
-      ['Bill','Date','Factory','Farmer','Net kg','Payable','Status','Outstanding',''],
-      rows.map(p=>{
-        const isVoid=p.status==='VOID';
-        const stPill=isVoid
-          ? `<span class="pill bounced">VOID</span>`
-          : `<span class="pill cleared">POSTED</span>`;
-        return `<tr style="${isVoid?'opacity:0.65;background:#fef2f2;':''}">
-          <td><button class="link" data-bill="${p.id}">${text(p.number)}</button></td>
-          <td>${text(p.date)}</td>
-          <td>${text(p.branch)}</td>
-          <td><strong>${text(p.farmer)}</strong><br><small>${text(p.village)}</small></td>
-          <td>${number(p.net_kg)}</td>
-          <td>${money(p.payable)}</td>
-          <td>${stPill}</td>
-          <td>${isVoid?'—':money(p.payments_summary.outstanding)}</td>
-          <td><button class="secondary" data-bill="${p.id}">Open</button></td>
-        </tr>`;
-      })
-    );
-    wireBills();
+  let currentOffset=0;
+  const pageSize=50;
+  let allLoadedBills=[];
+  let searchTimer;
+  let fetchId=0;
+
+  async function fetchBills(reset=true){
+    const thisFetch=++fetchId;
+    if(reset){
+      currentOffset=0;
+      allLoadedBills=[];
+      $('#purchase-table').innerHTML='<div class="empty">Loading matching bills…</div>';
+    }
+    const q=$('#bill-search').value.trim();
+    const branch=$('#bill-factory').value;
+    const status=$('#bill-status-filter').value;
+    const dFrom=$('#bill-date-from').value;
+    const dTo=$('#bill-date-to').value;
+
+    let params=new URLSearchParams();
+    params.set('limit',String(pageSize));
+    params.set('offset',String(currentOffset));
+    if(branch) params.set('branch_id',branch);
+    if(status) params.set('status',status);
+    if(q) params.set('search',q);
+    if(dFrom) params.set('date_from',dFrom);
+    if(dTo) params.set('date_to',dTo);
+
+    try{
+      const data=await api('/purchases?'+params.toString());
+      if(thisFetch!==fetchId)return;
+      if(reset){
+        allLoadedBills=data;
+      }else{
+        allLoadedBills=allLoadedBills.concat(data);
+      }
+      currentOffset+=data.length;
+      
+      $('#purchase-count').textContent=`Showing ${allLoadedBills.length} purchase bill${allLoadedBills.length===1?'':'s'}${dFrom||dTo?` (from ${dFrom||'earliest'} to ${dTo||'latest'})`:''}`;
+      
+      $('#purchase-table').innerHTML=table(
+        ['Bill','Date','Factory','Farmer','Net kg','Payable','Status','Outstanding',''],
+        allLoadedBills.map(p=>{
+          const isVoid=p.status==='VOID';
+          const stPill=isVoid
+            ? `<span class="pill bounced">VOID</span>`
+            : `<span class="pill cleared">POSTED</span>`;
+          return `<tr style="${isVoid?'opacity:0.65;background:#fef2f2;':''}">
+            <td><button class="link" data-bill="${p.id}">${text(p.number)}</button></td>
+            <td>${text(p.date)}</td>
+            <td>${text(p.branch)}</td>
+            <td><strong>${text(p.farmer)}</strong><br><small>${text(p.village)}${p.mobile?' · '+text(p.mobile):''}</small></td>
+            <td>${number(p.net_kg)}</td>
+            <td>${money(p.payable)}</td>
+            <td>${stPill}</td>
+            <td>${isVoid?'—':money(p.payments_summary.outstanding)}</td>
+            <td><button class="secondary" data-bill="${p.id}">Open</button></td>
+          </tr>`;
+        }),
+        'No matching purchase bills found'
+      );
+      wireBills();
+      
+      const loadMoreWrap=$('#purchase-load-more');
+      loadMoreWrap.hidden=data.length<pageSize;
+    }catch(err){
+      if(thisFetch===fetchId){
+        $('#purchase-table').innerHTML=`<div class="notice bad">${text(err.message)}</div>`;
+      }
+    }
   }
+
+  function queueSearch(){
+    clearTimeout(searchTimer);
+    searchTimer=setTimeout(()=>fetchBills(true),260);
+  }
+
+  $('#bill-search').oninput=queueSearch;
+  $('#bill-factory').onchange=()=>fetchBills(true);
+  $('#bill-status-filter').onchange=()=>fetchBills(true);
+  $('#bill-date-from').onchange=()=>fetchBills(true);
+  $('#bill-date-to').onchange=()=>fetchBills(true);
+
+  $('#btn-today').onclick=()=>{
+    const d=new Date().toISOString().split('T')[0];
+    $('#bill-date-from').value=d;
+    $('#bill-date-to').value=d;
+    fetchBills(true);
+  };
+  $('#btn-month').onclick=()=>{
+    const now=new Date();
+    const firstDay=new Date(now.getFullYear(),now.getMonth(),1).toISOString().split('T')[0];
+    const todayStr=now.toISOString().split('T')[0];
+    $('#bill-date-from').value=firstDay;
+    $('#bill-date-to').value=todayStr;
+    fetchBills(true);
+  };
+  $('#btn-clear-date').onclick=()=>{
+    $('#bill-date-from').value='';
+    $('#bill-date-to').value='';
+    fetchBills(true);
+  };
+  $('#load-more-btn').onclick=()=>fetchBills(false);
   $('#new-from-reg').onclick=()=>navigate('new');
-  $('#bill-search').oninput=display;
-  $('#bill-factory').onchange=display;
-  $('#bill-status-filter').onchange=display;
-  display();
+
+  await fetchBills(true);
 }
 function wireBills(){$$('[data-bill]').forEach(b=>b.onclick=()=>billModal(+b.dataset.bill).catch(e=>notify(e.message,'bad')))}
 let savedSubmission=null;

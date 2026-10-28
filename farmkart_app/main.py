@@ -247,16 +247,17 @@ def add_purchase(data:PurchaseIn,user:User=Depends(require_user),db:Session=Depe
         raise HTTPException(409,'Purchase conflict. Please retry with the same request key.')
 
 @app.get('/api/purchases')
-def purchases(branch_id:int|None=None,search:str='',date_from:date|None=None,date_to:date|None=None,limit:int=Query(200,ge=1,le=1000),user:User=Depends(require_user),db:Session=Depends(get_db)):
+def purchases(branch_id:int|None=None,search:str='',date_from:date|None=None,date_to:date|None=None,status:str='',limit:int=Query(100,ge=1,le=1000),offset:int=Query(0,ge=0),user:User=Depends(require_user),db:Session=Depends(get_db)):
     if branch_id:check_branch(user,branch_id)
     q=scoped(select(Purchase),user,Purchase).options(selectinload(Purchase.farmer),selectinload(Purchase.branch),selectinload(Purchase.payments))
     if branch_id:q=q.where(Purchase.branch_id==branch_id)
     if date_from:q=q.where(Purchase.purchase_date>=date_from)
     if date_to:q=q.where(Purchase.purchase_date<=date_to)
+    if status.strip():q=q.where(Purchase.status==status.strip().upper())
     if search.strip():
         s=f'%{search.strip()}%'
-        q=q.join(Farmer).where((Purchase.number.ilike(s))|(Farmer.name.ilike(s))|(Farmer.village.ilike(s))|(Purchase.rst_number.ilike(s)))
-    q=q.order_by(Purchase.id.desc()).limit(limit)
+        q=q.join(Farmer).where((Purchase.number.ilike(s))|(Farmer.name.ilike(s))|(Farmer.village.ilike(s))|(Farmer.mobile.ilike(s))|(Purchase.rst_number.ilike(s))|(Purchase.vehicle_number.ilike(s)))
+    q=q.order_by(Purchase.id.desc()).offset(offset).limit(limit)
     return [purchase_view(x) for x in db.scalars(q)]
 
 @app.get('/api/purchases/{purchase_id}')
