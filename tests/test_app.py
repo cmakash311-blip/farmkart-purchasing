@@ -99,3 +99,74 @@ def test_validation(setup):
     r=c.post('/api/purchases',headers=h,json={'branch_id':1,'farmer_id':fid,'idem_key':uuid.uuid4().hex,'lines':[{'variety':'Bold','gross_kg':'10','kapat_kg':'12','rate_per_20kg':'2000'}]})
     assert r.status_code==422
     assert c.get('/api/dashboard').json()['all_bills']==0
+
+def test_user_management(setup):
+    c=setup
+    # Non-owner forbidden
+    auth(c,'hmtbuy')
+    assert c.get('/api/users').status_code==403
+    assert c.post('/api/users',json={'username':'newuser','name':'New','role':'PURCHASE','password':'Password12345!'}).status_code==403
+    
+    # Owner access
+    h=auth(c,'owner')
+    users=c.get('/api/users').json()
+    assert len(users)>=4
+    assert any(u['username']=='owner' and u['role']=='OWNER' for u in users)
+    
+    # Validation failures
+    # 1. Password too short (<12 chars)
+    short_pwd=c.post('/api/users',headers=h,json={'username':'clerk1','name':'Clerk One','role':'PURCHASE','branch_id':1,'password':'short'})
+    assert short_pwd.status_code==422
+    
+    # 2. Staff role without branch
+    no_branch=c.post('/api/users',headers=h,json={'username':'clerk1','name':'Clerk One','role':'PURCHASE','password':'ValidPassword@123'})
+    assert no_branch.status_code==422
+    
+    # 3. Create staff user successfully
+    created=c.post('/api/users',headers=h,json={'username':'clerk1','name':'Clerk One','role':'PURCHASE','branch_id':1,'password':'ValidPassword@123'})
+    assert created.status_code==201, created.text
+    user_data=created.json()
+    assert user_data['username']=='clerk1'
+    assert user_data['role']=='PURCHASE'
+    assert user_data['branch_id']==1
+    assert user_data['active'] is True
+    
+    # 4. Duplicate username rejected
+    dup=c.post('/api/users',headers=h,json={'username':'clerk1','name':'Another Clerk','role':'PURCHASE','branch_id':1,'password':'ValidPassword@123'})
+    assert dup.status_code==409
+    
+    # 5. New user can log in
+    login_res=c.post('/api/login',json={'username':'clerk1','password':'ValidPassword@123'})
+    assert login_res.status_code==200, login_res.text
+    clerk_csrf={'X-CSRF-Token':login_res.json()['csrf_token']}
+    me=c.get('/api/me',headers=clerk_csrf).json()
+    assert me['username']=='clerk1'
+    assert me['role']=='PURCHASE'
+    assert me['branch_id']==1
+    
+    # 6. Owner deactivates user
+    h=auth(c,'owner')
+    # Self-deactivation forbidden
+    owner_id=[u['id'] for u in c.get('/api/users').json() if u['username']=='owner'][0]
+    self_deact=c.patch(f'/api/users/{owner_id}/status',headers=h,json={'active':False})
+    assert self_deact.status_code==400
+    
+    deact=c.patch(f"/api/users/{user_data['id']}/status",headers=h,json={'active':False})
+    assert deact.status_code==200
+    assert deact.json()['active'] is False
+    
+    # Deactivated user cannot log in
+    assert c.post('/api/login',json={'username':'clerk1','password':'ValidPassword@123'}).status_code==401
+    
+    # 7. Owner reactivates user and resets password
+    react=c.patch(f"/api/users/{user_data['id']}/status",headers=h,json={'active':True})
+    assert react.status_code==200
+    assert react.json()['active'] is True
+    
+    reset=c.post(f"/api/users/{user_data['id']}/reset-password",headers=h,json={'new_password':'NewStrongPassword@999'})
+    assert reset.status_code==200
+    
+    # Old password fails
+    assert c.post('/api/login',json={'username':'clerk1','password':'ValidPassword@123'}).status_code==401
+    # New password succeeds
+    assert c.post('/api/login',json={'username':'clerk1','password':'NewStrongPassword@999'}).status_code==200

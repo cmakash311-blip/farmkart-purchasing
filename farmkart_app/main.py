@@ -17,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 from .db import get_db
 from .models import Branch, User, SessionToken, Farmer, BillSequence, Purchase, PurchaseLine, Payment, Audit
-from .security import COOKIE_NAME, hash_token, check_password, new_session, require_user, check_branch, allow, can_access
+from .security import COOKIE_NAME, hash_token, check_password, encode_password, new_session, require_user, check_branch, allow, can_access
 
 # Fail closed if someone mistakenly starts the pilot in production mode with demo settings.
 if os.getenv('APP_ENV') == 'production':
@@ -121,6 +121,19 @@ class PaymentIn(BaseModel):
 
 class PaymentStatusIn(BaseModel):
     status:Literal['CLEARED','BOUNCED']
+
+class UserCreateIn(BaseModel):
+    username: str = Field(min_length=3, max_length=50)
+    name: str = Field(min_length=2, max_length=120)
+    role: Literal['OWNER', 'PURCHASE', 'ACCOUNTS', 'VIEWER']
+    branch_id: int | None = None
+    password: str = Field(min_length=12, max_length=128)
+
+class UserStatusIn(BaseModel):
+    active: bool
+
+class UserResetPasswordIn(BaseModel):
+    new_password: str = Field(min_length=12, max_length=128)
 
 @app.get('/')
 def index(): return FileResponse(STATIC/'index.html')
@@ -320,3 +333,86 @@ def audits(limit:int=Query(100,ge=1,le=500),user:User=Depends(require_user),db:S
     allow(user,'OWNER')
     entries=db.scalars(select(Audit).order_by(Audit.id.desc()).limit(limit))
     return [{'id':x.id,'user_id':x.user_id,'branch_id':x.branch_id,'action':x.action,'entity':x.entity,'entity_id':x.entity_id,'details':x.details,'at':str(x.created_at)} for x in entries]
+
+@app.get('/api/users')
+def list_users(user:User=Depends(require_user),db:Session=Depends(get_db)):
+    allow(user,'OWNER')
+    q=select(User).options(selectinload(User.branch)).order_by(User.id)
+    return [{
+        'id':u.id,
+        'username':u.username,
+        'name':u.full_name,
+        'role':u.role,
+        'branch_id':u.branch_id,
+        'branch_name':u.branch.name if u.branch else 'All factories (Owner)',
+        'branch_code':u.branch.code if u.branch else 'ALL',
+        'active':u.active
+    } for u in db.scalars(q)]
+
+@app.post('/api/users',status_code=201)
+def create_user_endpoint(data:UserCreateIn,user:User=Depends(require_user),db:Session=Depends(get_db)):
+    allow(user,'OWNER')
+    clean_username=data.username.strip().lower()
+    if not clean_username.isalnum() and not all(c in 'abcdefghijklmnopqrstuvwxyz0123456789_.-' for c in clean_username):
+        raise HTTPException(422,'Username may only contain letters, numbers, dots, hyphens and underscores')
+    if db.scalar(select(User).where(User.username==clean_username)):
+        raise HTTPException(409,'Username already exists')
+    if data.role!='OWNER':
+        if not data.branch_id:
+            raise HTTPException(422,'A factory must be assigned for staff roles')
+        if not db.get(Branch,data.branch_id):
+            raise HTTPException(422,'Assigned factory does not exist')
+        target_branch=data.branch_id
+    else:
+        target_branch=None
+    new_user=User(
+        username=clean_username,
+        full_name=data.name.strip(),
+        password_hash=encode_password(data.password),
+        role=data.role,
+        branch_id=target_branch,
+        active=True
+    )
+    db.add(new_user)
+    db.flush()
+    audit(db,user,target_branch,'CREATE_USER','user',new_user.id,f'{clean_username} ({data.role})')
+    db.commit()
+    loaded=db.scalar(select(User).options(selectinload(User.branch)).where(User.id==new_user.id))
+    return {
+        'id':loaded.id,
+        'username':loaded.username,
+        'name':loaded.full_name,
+        'role':loaded.role,
+        'branch_id':loaded.branch_id,
+        'branch_name':loaded.branch.name if loaded.branch else 'All factories (Owner)',
+        'active':loaded.active
+    }
+
+@app.patch('/api/users/{user_id}/status')
+def update_user_status(user_id:int,data:UserStatusIn,user:User=Depends(require_user),db:Session=Depends(get_db)):
+    allow(user,'OWNER')
+    target=db.get(User,user_id)
+    if not target:raise HTTPException(404,'User not found')
+    if target.id==user.id and not data.active:
+        raise HTTPException(400,'You cannot deactivate your own account')
+    target.active=data.active
+    if not data.active:
+        active_tokens=db.scalars(select(SessionToken).where(SessionToken.user_id==target.id)).all()
+        for tok in active_tokens:
+            db.delete(tok)
+    audit(db,user,target.branch_id,'USER_STATUS','user',target.id,f'active={data.active}')
+    db.commit()
+    return {'id':target.id,'active':target.active}
+
+@app.post('/api/users/{user_id}/reset-password')
+def reset_user_password(user_id:int,data:UserResetPasswordIn,user:User=Depends(require_user),db:Session=Depends(get_db)):
+    allow(user,'OWNER')
+    target=db.get(User,user_id)
+    if not target:raise HTTPException(404,'User not found')
+    target.password_hash=encode_password(data.new_password)
+    active_tokens=db.scalars(select(SessionToken).where(SessionToken.user_id==target.id)).all()
+    for tok in active_tokens:
+        db.delete(tok)
+    audit(db,user,target.branch_id,'RESET_PASSWORD','user',target.id,f'Reset password for {target.username}')
+    db.commit()
+    return {'ok':True,'message':f'Password updated for {target.username}'}

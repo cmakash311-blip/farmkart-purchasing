@@ -21,6 +21,7 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(20))  # OWNER, PURCHASE, ACCOUNTS, VIEWER
     branch_id: Mapped[int | None] = mapped_column(ForeignKey('branches.id'))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    branch: Mapped['Branch | None'] = relationship()
 
 class SessionToken(Base):
     __tablename__ = 'session_tokens'

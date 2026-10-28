@@ -11,14 +11,14 @@ const title=(label,desc,action='')=>`<div class="page-head"><div><div class="eye
 function notify(message,kind='good'){const e=$('#notice');e.textContent=message;e.className='notice '+kind;e.hidden=false;clearTimeout(notify.t);notify.t=setTimeout(()=>e.hidden=true,6500)}
 async function api(path,method='GET',body){let options={method,headers:{}};if(body!==undefined){options.headers['Content-Type']='application/json';options.body=JSON.stringify(body)}if(!['GET','HEAD'].includes(method))options.headers['X-CSRF-Token']=state.csrf;let r;try{r=await fetch('/api'+path,options)}catch{throw Error('Cannot reach the server. Check your internet connection. Do not submit the transaction repeatedly.')}let obj;try{obj=await r.json()}catch{throw Error('Invalid response from the server')}if(!r.ok){if(r.status===401){showLogin()}throw Error(typeof obj.detail==='string'?obj.detail:'Request failed')}return obj}
 function showLogin(){state.user=null;$('#shell').hidden=true;$('#login').hidden=false;$('#password').value=''}
-async function initialize(){try{const me=await api('/me');state.user=me;state.csrf=me.csrf_token;state.branches=await api('/branches');state.branch=me.role==='OWNER'?'':String(me.branch_id);$('#login').hidden=true;$('#shell').hidden=false;$('#user-name').textContent=me.name;$('#user-role').textContent=me.role;$('#audit-nav').hidden=me.role!=='OWNER';const branchSelector=$('#branch-filter');branchSelector.innerHTML=(me.role==='OWNER'?choice('','All factories'): '')+state.branches.map(b=>choice(b.id,b.name)).join('');branchSelector.value=state.branch;branchSelector.disabled=me.role!=='OWNER';navigate('dashboard')}catch(e){showLogin()}}
+async function initialize(){try{const me=await api('/me');state.user=me;state.csrf=me.csrf_token;state.branches=await api('/branches');state.branch=me.role==='OWNER'?'':String(me.branch_id);$('#login').hidden=true;$('#shell').hidden=false;$('#user-name').textContent=me.name;$('#user-role').textContent=me.role;$('#users-nav').hidden=me.role!=='OWNER';$('#audit-nav').hidden=me.role!=='OWNER';const branchSelector=$('#branch-filter');branchSelector.innerHTML=(me.role==='OWNER'?choice('','All factories'): '')+state.branches.map(b=>choice(b.id,b.name)).join('');branchSelector.value=state.branch;branchSelector.disabled=me.role!=='OWNER';navigate('dashboard')}catch(e){showLogin()}}
 $('#login-form').addEventListener('submit',async e=>{e.preventDefault();const btn=e.target.querySelector('button');btn.disabled=true;$('#login-error').hidden=true;try{const data=await api('/login','POST',{username:$('#username').value,password:$('#password').value});state.csrf=data.csrf_token;await initialize()}catch(err){$('#login-error').textContent=err.message;$('#login-error').hidden=false}finally{btn.disabled=false}});
 $('#logout').onclick=async()=>{try{await api('/logout','POST',{})}finally{showLogin()}};
 $('#branch-filter').onchange=e=>{state.branch=e.target.value;navigate(state.view)};
 $('#mobile-menu').onclick=()=>$('#sidebar').classList.toggle('open');
 $$('#navigation .nav').forEach(btn=>btn.onclick=()=>navigate(btn.dataset.view));
 function $$(s){return Array.from(document.querySelectorAll(s))}
-function navigate(view){state.view=view;$('#sidebar').classList.remove('open');$$('#navigation .nav').forEach(b=>b.classList.toggle('active',b.dataset.view===view));const names={dashboard:'Overview',new:'New purchase bill',purchases:'Purchase register',farmers:'Farmers',payments:'Cheques & payments',reports:'Reports & exports',audit:'Audit history'};$('#top-title').textContent=names[view];$('#view').innerHTML='<div class="panel"><div class="empty">Loading…</div></div>';const f=({dashboard:renderDashboard,new:renderNew,purchases:renderPurchases,farmers:renderFarmers,payments:renderPayments,reports:renderReports,audit:renderAudit})[view];f().catch(err=>{$('#view').innerHTML=`<div class="notice bad">${text(err.message)}</div>`})}
+function navigate(view){state.view=view;$('#sidebar').classList.remove('open');$$('#navigation .nav').forEach(b=>b.classList.toggle('active',b.dataset.view===view));const names={dashboard:'Overview',new:'New purchase bill',purchases:'Purchase register',farmers:'Farmers',payments:'Cheques & payments',reports:'Reports & exports',users:'Staff & user management',audit:'Audit history'};$('#top-title').textContent=names[view];$('#view').innerHTML='<div class="panel"><div class="empty">Loading…</div></div>';const f=({dashboard:renderDashboard,new:renderNew,purchases:renderPurchases,farmers:renderFarmers,payments:renderPayments,reports:renderReports,users:renderUsers,audit:renderAudit})[view];f().catch(err=>{$('#view').innerHTML=`<div class="notice bad">${text(err.message)}</div>`})}
 function scope(){return state.branch?'?branch_id='+encodeURIComponent(state.branch):''}
 function table(headers,rows,empty='No records found'){return `<div class="table-wrap"><table><thead><tr>${headers.map(h=>`<th>${text(h)}</th>`).join('')}</tr></thead><tbody>${rows.length?rows.join(''):`<tr><td class="empty" colspan="${headers.length}"><strong>${text(empty)}</strong>New records will appear here.</td></tr>`}</tbody></table></div>`}
 async function renderDashboard(){let [d,all]=await Promise.all([api('/dashboard'+scope()),api('/purchases'+scope())]);$('#view').innerHTML=title('Purchasing overview','Live purchasing visibility across your authorized factories.',`<button class="primary" id="quick-new">+ New purchase</button>`)+`<div class="grid four"><div class="stat"><div class="kicker">Today’s purchases <span class="emoji">▤</span></div><div class="number">${d.today_bills}</div><div class="foot">Bills posted today</div></div><div class="stat"><div class="kicker">Today’s quantity <span class="emoji">♧</span></div><div class="number">${number(d.today_kg)} <small>kg</small></div><div class="foot">Net peanut weight</div></div><div class="stat"><div class="kicker">Today’s purchase value <span class="emoji">₹</span></div><div class="number">${money(d.today_value)}</div><div class="foot">After charges and adjustments</div></div><div class="stat"><div class="kicker">Outstanding payments <span class="emoji">◷</span></div><div class="number">${money(d.outstanding)}</div><div class="foot">Includes pending cheques / bank transfers</div></div></div><div class="grid two" style="margin-top:21px"><div class="panel"><h3>All-time purchasing</h3><div class="detail-grid"><div><small>Total bills</small><strong>${d.all_bills}</strong></div><div><small>Total net weight</small><strong>${number(d.all_kg)} kg</strong></div><div><small>Total payable</small><strong>${money(d.total_purchase_value)}</strong></div></div></div><div class="panel"><h3>Payment instruments</h3><div class="stat" style="border:0;box-shadow:none;padding:0"><div class="kicker">Cheque / bank transfer pending clearance</div><div class="number">${money(d.pending_instruments)}</div></div></div></div><div class="panel" style="margin-top:20px"><div class="row" style="justify-content:space-between"><h3>Recent purchase bills</h3><button class="secondary" id="all-purchases">View all →</button></div>${table(['Bill','Factory','Farmer','Date','Net kg','Payable'],all.slice(0,8).map(p=>`<tr><td><button class="link" data-bill="${p.id}">${text(p.number)}</button></td><td>${text(p.branch)}</td><td>${text(p.farmer)}</td><td>${text(p.date)}</td><td>${number(p.net_kg)}</td><td>${money(p.payable)}</td></tr>`),'No purchase bills yet')}</div>`;$('#quick-new').onclick=()=>navigate('new');$('#all-purchases').onclick=()=>navigate('purchases');wireBills()}
@@ -57,6 +57,189 @@ async function billModal(id){const p=await api('/purchases/'+id);const lines=p.l
 function paymentModal(bill){openModal(`<h2>Record farmer payment</h2><p class="muted">Bill <strong>${text(bill.number)}</strong> · ${text(bill.farmer)}</p><div class="callout">Unallocated payable: <strong>${money(bill.payments_summary.unallocated)}</strong>. A cheque or bank transfer will remain pending until cleared.</div><form id="payment-form"><div class="form-grid two" style="margin-top:20px"><label>Payment method<select name="method" id="pay-method">${choice('CASH','Cash')}${choice('CHEQUE','Cheque')}${choice('BANK','Bank transfer')}</select></label><label>Amount ₹<input name="amount" value="${text(bill.payments_summary.unallocated)}" type="number" min="0.01" step="0.01" max="${text(bill.payments_summary.unallocated)}" required></label><label>Cheque / bank reference<input name="reference" maxlength="100" placeholder="Cheque number or UTR"></label><label>Instrument date<input name="instrument_date" type="date"></label></div><p id="payment-error" class="error-text"></p><button class="primary" style="margin-top:15px">Record payment</button></form>`);$('#payment-form').onsubmit=async e=>{e.preventDefault();const body=Object.fromEntries(new FormData(e.target));body.idem_key=paymentToken;body.instrument_date=body.instrument_date||null;try{await api('/purchases/'+bill.id+'/payments','POST',body);notify('Payment recorded.');await billModal(bill.id)}catch(ex){$('#payment-error').textContent=ex.message}};const paymentToken=token()}
 async function renderPayments(){const payments=await api('/payments'+scope());$('#view').innerHTML=title('Cheques & payments','Review issued cheques, bank transfers, cash and clearance status.')+`<div class="panel"><div class="filters"><select id="pay-filter"><option value="">All payments</option><option value="PENDING">Pending clearance</option><option value="CLEARED">Cleared</option><option value="BOUNCED">Bounced</option></select></div><div id="payment-table"></div><p class="help">Only accounts and owner roles can record or finalize payments. Cash is cleared at entry; cheques and bank transfers need confirmation.</p></div>`;function display(){const f=$('#pay-filter').value,pp=payments.filter(p=>!f||p.status===f);$('#payment-table').innerHTML=table(['Bill','Farmer','Method','Reference','Amount','Status','Action'],pp.map(p=>`<tr><td><button class="link" data-bill="${p.purchase_id}">${text(p.bill_number)}</button></td><td>${text(p.farmer)}</td><td>${text(p.method)}</td><td>${text(p.reference||'—')}</td><td>${money(p.amount)}</td><td><span class="pill ${text(p.status.toLowerCase())}">${text(p.status)}</span></td><td>${p.status==='PENDING'&&['OWNER','ACCOUNTS'].includes(state.user.role)?`<button class="secondary" data-clear="${p.id}">Set status</button>`:'—'}</td></tr>`),'No payments yet');wireBills();$$('[data-clear]').forEach(b=>b.onclick=()=>statusModal(+b.dataset.clear))}$('#pay-filter').onchange=display;display()}
 function statusModal(id){openModal(`<h2>Update payment status</h2><p class="muted">Mark this cheque or bank transfer only after checking bank evidence.</p><div class="grid"><button id="mark-cleared" class="primary">Mark cleared</button><button id="mark-bounced" class="secondary">Mark bounced / failed</button></div><p id="status-error" class="error-text"></p>`);for(const [selector,status] of [['#mark-cleared','CLEARED'],['#mark-bounced','BOUNCED']])$(selector).onclick=async()=>{if(!confirm('Confirm that the instrument status is '+status+'?'))return;try{await api('/payments/'+id+'/status','POST',{status});closeModal();notify('Payment status updated.');navigate('payments')}catch(e){$('#status-error').textContent=e.message}}}
-async function renderReports(){const d=await api('/dashboard'+scope());$('#view').innerHTML=title('Reports & exports','Download your authorized factory purchase records and reconcile accounts.')+`<div class="grid two"><div class="panel"><div class="eyebrow">PURCHASE REGISTER</div><h3>Export all purchase bills</h3><p class="muted">CSV compatible with Excel. Includes farmer name, weights, payable, cleared, pending and outstanding.</p><button id="export-btn" class="primary">↓ Download purchase CSV</button></div><div class="panel"><div class="eyebrow">CURRENT REPORT</div><h3>Purchase summary</h3><div class="detail-grid"><div><small>Total bills</small><strong>${d.all_bills}</strong></div><div><small>Net kg</small><strong>${number(d.all_kg)}</strong></div><div><small>Payable</small><strong>${money(d.total_purchase_value)}</strong></div></div></div></div><div class="callout" style="margin-top:19px">Exports are generated server-side and restricted to authorized factory data. Full accounting integration and statutory reporting require additional configuration.</div>`;$('#export-btn').onclick=()=>{window.location.href='/api/export/purchases'+scope()}}
+async function renderUsers(){
+  if(state.user.role!=='OWNER')throw Error('Owner access required');
+  const [users,branches]=await Promise.all([api('/users'),state.branches.length?Promise.resolve(state.branches):api('/branches')]);
+  $('#view').innerHTML=title('Staff & user management','Manage factory staff access, roles and login credentials across Himatnagar & Modasa.','<button id="add-user-btn" class="primary">+ Add staff member</button>')+
+    `<div class="panel">
+      <div class="filters">
+        <input id="user-search" placeholder="Search staff by name or username">
+      </div>
+      <div id="users-table"></div>
+      <p class="help">Owners have access to all factories and administrative settings. Purchasing and Accounts staff are strictly isolated to their assigned factory.</p>
+    </div>`;
+  function display(){
+    const q=($('#user-search').value||'').toLowerCase().trim();
+    const filtered=users.filter(u=>!q||u.name.toLowerCase().includes(q)||u.username.toLowerCase().includes(q)||u.role.toLowerCase().includes(q));
+    $('#users-table').innerHTML=table(
+      ['Staff name','Username','Role','Assigned factory','Status','Actions'],
+      filtered.map(u=>{
+        const isSelf=u.id===state.user.id;
+        const rolePill=`<span class="pill ${u.role==='OWNER'?'cleared':u.role==='PURCHASE'?'pending':'bounced'}">${text(u.role)}</span>`;
+        const statusPill=u.active
+          ? `<span class="pill cleared">Active</span>`
+          : `<span class="pill bounced">Disabled</span>`;
+        const actions=[
+          `<button class="secondary" data-reset-user="${u.id}" data-username="${text(u.username)}">Reset password</button>`
+        ];
+        if(!isSelf){
+          actions.push(
+            u.active
+              ? `<button class="outline-btn" style="color:var(--bad, #dc2626)" data-toggle-user="${u.id}" data-active="0" data-username="${text(u.username)}">Deactivate</button>`
+              : `<button class="secondary" data-toggle-user="${u.id}" data-active="1" data-username="${text(u.username)}">Activate</button>`
+          );
+        }
+        return `<tr>
+          <td><strong>${text(u.name)}</strong>${isSelf?' <small>(You)</small>':''}</td>
+          <td><code>${text(u.username)}</code></td>
+          <td>${rolePill}</td>
+          <td>${text(u.branch_name)}</td>
+          <td>${statusPill}</td>
+          <td><div class="row" style="gap:6px">${actions.join('')}</div></td>
+        </tr>`;
+      }),
+      'No staff members found'
+    );
+    $$('[data-reset-user]').forEach(btn=>{
+      btn.onclick=()=>resetPasswordModal(+btn.dataset.resetUser,btn.dataset.username);
+    });
+    $$('[data-toggle-user]').forEach(btn=>{
+      btn.onclick=()=>toggleUserStatus(+btn.dataset.toggleUser,btn.dataset.active==='1',btn.dataset.username);
+    });
+  }
+  $('#user-search').oninput=display;
+  $('#add-user-btn').onclick=()=>addUserModal(branches,async()=>renderUsers());
+  display();
+}
+
+function genRandomPassword(){
+  const chars='abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%';
+  return 'Farm!'+Array.from(crypto.getRandomValues(new Uint8Array(10)),b=>chars[b%chars.length]).join('')+'#28';
+}
+
+function addUserModal(branches,done){
+  const defaultPwd=genRandomPassword();
+  openModal(`<h2>Add new staff member</h2>
+    <p class="muted">Create login credentials for factory purchasing or accounts personnel.</p>
+    <form id="new-user-form">
+      <div class="form-grid two">
+        <label>Full name *<input name="name" required minlength="2" maxlength="120" placeholder="e.g. Rajeshbhai Patel"></label>
+        <label>Staff username *<input name="username" required minlength="3" maxlength="50" placeholder="e.g. rajesh_hmt" pattern="[a-zA-Z0-9_.-]+"></label>
+        <label>System role *
+          <select name="role" id="user-role-select" required>
+            <option value="PURCHASE">PURCHASE (Weighbridge & Bills)</option>
+            <option value="ACCOUNTS">ACCOUNTS (Payments & Cheques)</option>
+            <option value="VIEWER">VIEWER (Read-only reports)</option>
+            <option value="OWNER">OWNER (Full administrative access)</option>
+          </select>
+        </label>
+        <label id="user-branch-wrap">Assigned factory *
+          <select name="branch_id" id="user-branch-select" required>
+            ${choice('','Select factory location')}
+            ${branches.map(b=>choice(b.id,`${b.name} (${b.code})`)).join('')}
+          </select>
+        </label>
+        <div style="grid-column: 1 / -1">
+          <label>Initial password (min 12 characters) *
+            <div class="row" style="gap:8px">
+              <input name="password" id="user-password-input" value="${text(defaultPwd)}" required minlength="12" style="font-family:monospace">
+              <button type="button" class="secondary" id="regen-pwd-btn">🎲 Generate</button>
+            </div>
+          </label>
+          <small class="help">Save or share this password securely with the staff member.</small>
+        </div>
+      </div>
+      <p id="user-modal-error" class="error-text"></p>
+      <button class="primary" style="margin-top:15px">Create staff account</button>
+    </form>`);
+  const roleSelect=$('#user-role-select');
+  const branchWrap=$('#user-branch-wrap');
+  const branchSelect=$('#user-branch-select');
+  roleSelect.onchange=()=>{
+    if(roleSelect.value==='OWNER'){
+      branchWrap.style.opacity='0.5';
+      branchSelect.required=false;
+      branchSelect.value='';
+      branchSelect.disabled=true;
+    }else{
+      branchWrap.style.opacity='1';
+      branchSelect.required=true;
+      branchSelect.disabled=false;
+    }
+  };
+  $('#regen-pwd-btn').onclick=()=>{
+    $('#user-password-input').value=genRandomPassword();
+  };
+  $('#new-user-form').onsubmit=async e=>{
+    e.preventDefault();
+    const btn=e.target.querySelector('button.primary');
+    btn.disabled=true;
+    $('#user-modal-error').textContent='';
+    try{
+      const fd=Object.fromEntries(new FormData(e.target));
+      if(fd.role==='OWNER')delete fd.branch_id;
+      else fd.branch_id=Number(fd.branch_id);
+      const created=await api('/users','POST',fd);
+      closeModal();
+      notify(`Staff account for ${created.name} (${created.username}) created.`);
+      if(typeof done==='function')await done();
+    }catch(err){
+      $('#user-modal-error').textContent=err.message;
+    }finally{
+      btn.disabled=false;
+    }
+  };
+}
+
+function resetPasswordModal(userId,username){
+  const defaultPwd=genRandomPassword();
+  openModal(`<h2>Reset password</h2>
+    <p class="muted">Set a new password for staff user <strong>${text(username)}</strong>.</p>
+    <div class="callout">Existing active sessions for this staff member will be signed out immediately.</div>
+    <form id="reset-pwd-form" style="margin-top:16px">
+      <label>New password (min 12 characters) *
+        <div class="row" style="gap:8px">
+          <input name="new_password" id="reset-pwd-input" value="${text(defaultPwd)}" required minlength="12" style="font-family:monospace">
+          <button type="button" class="secondary" id="regen-reset-btn">🎲 Generate</button>
+        </div>
+      </label>
+      <p id="reset-modal-error" class="error-text"></p>
+      <button class="primary" style="margin-top:16px">Update password</button>
+    </form>`);
+  $('#regen-reset-btn').onclick=()=>{
+    $('#reset-pwd-input').value=genRandomPassword();
+  };
+  $('#reset-pwd-form').onsubmit=async e=>{
+    e.preventDefault();
+    const btn=e.target.querySelector('button.primary');
+    btn.disabled=true;
+    $('#reset-modal-error').textContent='';
+    try{
+      const fd=Object.fromEntries(new FormData(e.target));
+      await api(`/users/${userId}/reset-password`,'POST',fd);
+      closeModal();
+      notify(`Password for ${username} updated successfully.`);
+    }catch(err){
+      $('#reset-modal-error').textContent=err.message;
+    }finally{
+      btn.disabled=false;
+    }
+  };
+}
+
+async function toggleUserStatus(userId,activate,username){
+  const msg=activate
+    ? `Activate staff account for ${username}? They will be able to log in again.`
+    : `Deactivate staff account for ${username}? They will be immediately signed out and locked out.`;
+  if(!confirm(msg))return;
+  try{
+    await api(`/users/${userId}/status`,'PATCH',{active:activate});
+    notify(`User ${username} ${activate?'activated':'deactivated'}.`);
+    navigate('users');
+  }catch(e){
+    notify(e.message,'bad');
+  }
+}
+
 async function renderAudit(){if(state.user.role!=='OWNER')throw Error('Owner access required');let a=await api('/audit');$('#view').innerHTML=title('Audit history','Recorded actions by staff members for purchase and payment changes.')+`<div class="panel">${table(['Time (UTC)','User ID','Factory ID','Action','Entity','Details'],a.map(x=>`<tr><td>${text(x.at)}</td><td>${text(x.user_id)}</td><td>${text(x.branch_id||'—')}</td><td>${text(x.action)}</td><td>${text(x.entity)} #${text(x.entity_id)}</td><td>${text(x.details)}</td></tr>`))}</div>`}
 initialize();
