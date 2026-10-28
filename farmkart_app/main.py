@@ -109,7 +109,11 @@ class LineIn(BaseModel):
 class PurchaseIn(BaseModel):
     idem_key: str=Field(min_length=16,max_length=100)
     branch_id:int
-    farmer_id:int
+    farmer_id:int|None=None
+    # Point 2: Direct farmer entry (auto-lookup or create-on-the-fly)
+    farmer_name:str|None=Field(default=None,max_length=140)
+    farmer_village:str|None=Field(default=None,max_length=140)
+    farmer_mobile:str|None=Field(default=None,max_length=20)
     rst_number:str=Field(default='',max_length=80)
     vehicle_number:str=Field(default='',max_length=60)
     weighbridge_charges:Decimal=Field(default=Decimal('0'),ge=0,le=10000000)
@@ -340,7 +344,34 @@ def add_purchase(data:PurchaseIn,user:User=Depends(require_user),db:Session=Depe
     if existing:
         check_branch(user,existing.branch_id)
         return {'purchase':purchase_view(existing,True),'repeated_request':True}
-    if not db.get(Farmer,data.farmer_id):raise HTTPException(422,'Farmer not found')
+    
+    # Point 2: Direct Farmer Resolution (existing farmer or create-on-the-fly)
+    target_farmer_id = data.farmer_id
+    if target_farmer_id:
+        target_farmer = db.get(Farmer, target_farmer_id)
+        if not target_farmer:
+            raise HTTPException(422, 'Farmer not found')
+    else:
+        name = (data.farmer_name or '').strip()
+        village = (data.farmer_village or '').strip()
+        mobile = (data.farmer_mobile or '').strip()
+        if not name or len(name) < 2:
+            raise HTTPException(422, 'Farmer name is required (at least 2 characters)')
+        if not village or len(village) < 2:
+            raise HTTPException(422, 'Farmer village is required (at least 2 characters)')
+        # Check if farmer with same name and village already exists
+        existing_farmer = db.scalar(select(Farmer).where(func.lower(Farmer.name) == name.lower(), func.lower(Farmer.village) == village.lower()))
+        if existing_farmer:
+            target_farmer = existing_farmer
+            if mobile and not target_farmer.mobile:
+                target_farmer.mobile = mobile
+        else:
+            target_farmer = Farmer(name=name, village=village, mobile=mobile)
+            db.add(target_farmer)
+            db.flush()
+            audit(db, user, data.branch_id, 'CREATE_FARMER_INLINE', 'farmer', target_farmer.id, f'{name} ({village})')
+        target_farmer_id = target_farmer.id
+
     branch=db.get(Branch,data.branch_id)
     if not branch:raise HTTPException(422,'Factory not found')
     computed=[]
@@ -377,7 +408,7 @@ def add_purchase(data:PurchaseIn,user:User=Depends(require_user),db:Session=Depe
             seq=BillSequence(branch_id=branch.id,fy=fyear,last_number=0);db.add(seq);db.flush()
         seq.last_number+=1
         number=f'{branch.code}/{fyear}/{seq.last_number:06d}'
-        bill=Purchase(number=number,idem_key=data.idem_key,branch_id=branch.id,farmer_id=data.farmer_id,created_by=user.id,purchase_date=today(),rst_number=data.rst_number.strip(),vehicle_number=data.vehicle_number.strip(),total_bags=total_bags,gross_kg=gross,kapat_kg=kapat,net_kg=net,gross_value=gross_value,weighbridge_charges=weigh,other_deductions=other,round_adjustment=adjust,payable=payable,notes=data.notes.strip(),status='POSTED',cash_paid=d(data.cash_paid),pay_later_cash=d(data.pay_later_cash),pay_later_date=data.pay_later_date)
+        bill=Purchase(number=number,idem_key=data.idem_key,branch_id=branch.id,farmer_id=target_farmer_id,created_by=user.id,purchase_date=today(),rst_number=data.rst_number.strip(),vehicle_number=data.vehicle_number.strip(),total_bags=total_bags,gross_kg=gross,kapat_kg=kapat,net_kg=net,gross_value=gross_value,weighbridge_charges=weigh,other_deductions=other,round_adjustment=adjust,payable=payable,notes=data.notes.strip(),status='POSTED',cash_paid=d(data.cash_paid),pay_later_cash=d(data.pay_later_cash),pay_later_date=data.pay_later_date)
         for variety,bc,bt,g,k,n,r,a in computed:
             bill.lines.append(PurchaseLine(variety=variety,bag_count=bc,bag_tare_kg=bt,gross_kg=g,kapat_kg=k,net_kg=n,rate_per_20kg=r,line_amount=a))
         db.add(bill);db.flush()

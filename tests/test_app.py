@@ -449,4 +449,88 @@ def test_farmer_khata_ledger_and_fifo_payment(setup):
     assert detail2['payments_summary']['outstanding']=='40000.00'
     assert detail2['payments_summary']['unallocated']=='40000.00'
 
+def test_point1_point2_direct_farmer_and_dual_payment_settlement(setup):
+    """Point 1 & Point 2: Direct farmer entry (create-on-the-fly) and dual payment settlement (Cash + Cheque)."""
+    c = setup
+    h = auth(c, 'hmtbuy')
+    
+    # 1. Post a bill with direct inline farmer details (not pre-existing) + Cash & Cheque split
+    idem = uuid.uuid4().hex
+    res = c.post('/api/purchases', headers=h, json={
+        'idem_key': idem,
+        'branch_id': 1,
+        'farmer_name': 'Rameshbhai Patel',
+        'farmer_village': 'Bhiloda',
+        'farmer_mobile': '9876543210',
+        'rst_number': 'RST-9999',
+        'vehicle_number': 'GJ-09-AB-1234',
+        'weighbridge_charges': '100.00',
+        'other_deductions': '0.00',
+        'round_adjustment': '0.00',
+        'notes': 'Point 1 & 2 integration test',
+        'lines': [{
+            'variety': 'Java',
+            'bag_count': 50,
+            'bag_tare_kg': '1.000',
+            'gross_kg': '2050.000', # 2050 - 50 = 2000kg net (100 mann)
+            'kapat_kg': '0.000',
+            'rate_per_20kg': '2000.00' # 100 * 2000 = 200,000 gross value. Payable = 200,000 - 100 = 199,900
+        }],
+        'cash_paid': '9900.00',
+        'pay_later_cash': '0.00',
+        'cheque_number': 'CHQ-88888',
+        'cheque_date': '2026-10-29',
+        'cheque_amount': '190000.00' # 9900 + 190000 = 199900 (fully settled)
+    })
+    assert res.status_code == 201, res.text
+    bill = res.json()['purchase']
+    assert bill['payable'] == '199900.00'
+    assert bill['farmer'] == 'Rameshbhai Patel'
+    assert bill['village'] == 'Bhiloda'
+    assert bill['mobile'] == '9876543210'
+    assert bill['cash_paid'] == '9900.00'
+    assert bill['cheque_number'] == 'CHQ-88888'
+    assert bill['cheque_amount'] == '190000.00'
+    
+    # Check that payments were auto-created: Cash (CLEARED) and Cheque (PENDING)
+    detail = c.get(f"/api/purchases/{bill['id']}", headers=h).json()
+    payments = detail['payments']
+    assert len(payments) == 2
+    cash_pay = next(p for p in payments if p['method'] == 'CASH')
+    assert cash_pay['amount'] == '9900.00'
+    assert cash_pay['status'] == 'CLEARED'
+    
+    chq_pay = next(p for p in payments if p['method'] == 'CHEQUE')
+    assert chq_pay['amount'] == '190000.00'
+    assert chq_pay['status'] == 'PENDING'
+    assert chq_pay['reference'] == 'CHQ-88888'
+    assert chq_pay['instrument_date'] == '2026-10-29'
+    
+    # 2. Check that the farmer was automatically created in the database
+    farmer_res = c.get('/api/farmers?search=Rameshbhai', headers=h).json()
+    assert len(farmer_res) >= 1
+    found = next(f for f in farmer_res if f['name'] == 'Rameshbhai Patel' and f['village'] == 'Bhiloda')
+    assert found['mobile'] == '9876543210'
+    
+    # 3. Post a 2nd bill with the SAME farmer name and village (should link to existing farmer, not duplicate)
+    idem2 = uuid.uuid4().hex
+    res2 = c.post('/api/purchases', headers=h, json={
+        'idem_key': idem2,
+        'branch_id': 1,
+        'farmer_name': 'Rameshbhai Patel',
+        'farmer_village': 'Bhiloda',
+        'rst_number': 'RST-10000',
+        'lines': [{
+            'variety': 'Java',
+            'bag_count': 10,
+            'bag_tare_kg': '1.000',
+            'gross_kg': '410.000',
+            'rate_per_20kg': '2000.00'
+        }]
+    })
+    assert res2.status_code == 201, res2.text
+    bill2 = res2.json()['purchase']
+    assert bill2['farmer_id'] == found['id'] # Reused same farmer
+
+
 
