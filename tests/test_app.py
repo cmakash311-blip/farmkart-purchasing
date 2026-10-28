@@ -170,3 +170,74 @@ def test_user_management(setup):
     assert c.post('/api/login',json={'username':'clerk1','password':'ValidPassword@123'}).status_code==401
     # New password succeeds
     assert c.post('/api/login',json={'username':'clerk1','password':'NewStrongPassword@999'}).status_code==200
+
+def test_void_purchase_bill(setup):
+    c=setup
+    h=auth(c,'owner')
+    fid=farmer(c,h)
+    
+    # 1. Create a bill
+    res=bill(c,h,fid,branch=1).json()['purchase']
+    bill_id=res['id']
+    assert res['status']=='POSTED'
+    assert c.get('/api/dashboard?branch_id=1').json()['all_bills']==1
+    
+    # 2. Short reason rejected (<5 chars)
+    short_void=c.post(f'/api/purchases/{bill_id}/void',headers=h,json={'reason':'bad'})
+    assert short_void.status_code==422
+    
+    # 3. Add a pending cheque
+    pay_res=c.post(f"/api/purchases/{bill_id}/payments",headers=h,json={
+        'idem_key':uuid.uuid4().hex,
+        'method':'CHEQUE',
+        'amount':'20000',
+        'reference':'CHQ-TEST-001'
+    })
+    assert pay_res.status_code==201
+    pay_id=pay_res.json()['payment']['id']
+    assert pay_res.json()['payment']['status']=='PENDING'
+    
+    # 4. Void the bill with valid reason
+    void_res=c.post(f'/api/purchases/{bill_id}/void',headers=h,json={'reason':'Operator entered wrong tare weight on ticket'})
+    assert void_res.status_code==200, void_res.text
+    voided_data=void_res.json()
+    assert voided_data['status']=='VOID'
+    assert 'Operator entered wrong tare weight' in voided_data['notes']
+    assert voided_data['payments_summary']['outstanding']=='0.00'
+    assert voided_data['payments_summary']['unallocated']=='0.00'
+    
+    # Pending cheque is now cancelled/bounced
+    payments=c.get(f'/api/purchases/{bill_id}').json()['payments']
+    assert payments[0]['status']=='BOUNCED'
+    
+    # 5. Dashboard excludes voided bill
+    dash=c.get('/api/dashboard?branch_id=1').json()
+    assert dash['all_bills']==0
+    assert dash['today_bills']==0
+    assert dash['all_kg']=='0.000'
+    assert dash['total_purchase_value']=='0.00'
+    
+    # 6. Cannot add payments to a voided bill
+    pay_after_void=c.post(f"/api/purchases/{bill_id}/payments",headers=h,json={
+        'idem_key':uuid.uuid4().hex,
+        'method':'CASH',
+        'amount':'5000'
+    })
+    assert pay_after_void.status_code==409
+    
+    # 7. Cannot void already voided bill
+    dup_void=c.post(f'/api/purchases/{bill_id}/void',headers=h,json={'reason':'Trying again'})
+    assert dup_void.status_code==400
+    
+    # 8. Cannot void a bill with cleared payments
+    res2=bill(c,h,fid,branch=1).json()['purchase']
+    b2_id=res2['id']
+    # Add cash payment (which clears instantly)
+    c.post(f"/api/purchases/{b2_id}/payments",headers=h,json={
+        'idem_key':uuid.uuid4().hex,
+        'method':'CASH',
+        'amount':'10000'
+    })
+    void_cleared=c.post(f'/api/purchases/{b2_id}/void',headers=h,json={'reason':'Mistake made but cash already given'})
+    assert void_cleared.status_code==400
+    assert 'cleared payment' in void_cleared.json()['detail']

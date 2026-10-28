@@ -67,6 +67,8 @@ def audit(db, user, branch_id, action, entity, id_, details=''):
     db.add(Audit(user_id=user.id, branch_id=branch_id, action=action, entity=entity, entity_id=id_, details=details))
 
 def pay_summary(bill: Purchase):
+    if getattr(bill, 'status', '') == 'VOID':
+        return {'cleared': inr(Decimal('0')), 'pending': inr(Decimal('0')), 'outstanding': inr(Decimal('0')), 'unallocated': inr(Decimal('0'))}
     cleared=sum((d(p.amount) for p in bill.payments if p.status=='CLEARED'),Decimal('0'))
     pending=sum((d(p.amount) for p in bill.payments if p.status=='PENDING'),Decimal('0'))
     return {'cleared':inr(cleared),'pending':inr(pending),'outstanding':inr(max(Decimal('0'),d(bill.payable)-cleared)), 'unallocated':inr(max(Decimal('0'),d(bill.payable)-cleared-pending))}
@@ -134,6 +136,9 @@ class UserStatusIn(BaseModel):
 
 class UserResetPasswordIn(BaseModel):
     new_password: str = Field(min_length=12, max_length=128)
+
+class PurchaseVoidIn(BaseModel):
+    reason: str = Field(min_length=5, max_length=500)
 
 @app.get('/')
 def index(): return FileResponse(STATIC/'index.html')
@@ -261,6 +266,28 @@ def purchase_detail(purchase_id:int,user:User=Depends(require_user),db:Session=D
     check_branch(user,p.branch_id)
     return purchase_view(p,True)
 
+@app.post('/api/purchases/{purchase_id}/void')
+def void_purchase(purchase_id:int,data:PurchaseVoidIn,user:User=Depends(require_user),db:Session=Depends(get_db)):
+    allow(user,'OWNER','PURCHASE')
+    p=db.scalar(select(Purchase).options(selectinload(Purchase.payments),selectinload(Purchase.lines),selectinload(Purchase.farmer),selectinload(Purchase.branch)).where(Purchase.id==purchase_id).with_for_update())
+    if not p:raise HTTPException(404,'Purchase bill not found')
+    check_branch(user,p.branch_id)
+    if p.status=='VOID':raise HTTPException(400,'Bill is already voided')
+    cleared=[pay for pay in p.payments if pay.status=='CLEARED']
+    if cleared:
+        raise HTTPException(400,'Cannot void bill: cleared payment(s) exist. Resolve or cancel payments first.')
+    for pay in p.payments:
+        if pay.status=='PENDING':
+            pay.status='BOUNCED'
+            pay.reference=f"{pay.reference or ''} [VOIDED: Bill cancelled]".strip()
+    p.status='VOID'
+    clean_reason=data.reason.strip()
+    prefix=f"[VOIDED by {user.username} on {today()}: {clean_reason}]"
+    p.notes=f"{p.notes}\n{prefix}" if p.notes else prefix
+    audit(db,user,p.branch_id,'VOID_PURCHASE','purchase',p.id,f"{p.number}: {clean_reason}")
+    db.commit()
+    return purchase_view(p,True)
+
 @app.post('/api/purchases/{purchase_id}/payments',status_code=201)
 def add_payment(purchase_id:int,data:PaymentIn,user:User=Depends(require_user),db:Session=Depends(get_db)):
     allow(user,'OWNER','ACCOUNTS')
@@ -307,7 +334,7 @@ def payments(branch_id:int|None=None,status:str='',user:User=Depends(require_use
 @app.get('/api/dashboard')
 def dashboard(branch_id:int|None=None,user:User=Depends(require_user),db:Session=Depends(get_db)):
     if branch_id:check_branch(user,branch_id)
-    q=scoped(select(Purchase),user,Purchase).options(selectinload(Purchase.payments))
+    q=scoped(select(Purchase).where(Purchase.status!='VOID'),user,Purchase).options(selectinload(Purchase.payments))
     if branch_id:q=q.where(Purchase.branch_id==branch_id)
     bills=list(db.scalars(q))
     daily=[x for x in bills if x.purchase_date==today()]
@@ -319,13 +346,13 @@ def export_purchases(branch_id:int|None=None,user:User=Depends(require_user),db:
     q=scoped(select(Purchase),user,Purchase).options(selectinload(Purchase.farmer),selectinload(Purchase.branch),selectinload(Purchase.payments)).order_by(Purchase.id)
     if branch_id:q=q.where(Purchase.branch_id==branch_id)
     output=io.StringIO();writer=csv.writer(output)
-    writer.writerow(['Bill','Date','Factory','Farmer','Village','Mobile','RST','Net kg','Gross value INR','Charges INR','Adjustments INR','Payable INR','Cleared INR','Pending INR','Outstanding INR'])
+    writer.writerow(['Bill','Date','Factory','Farmer','Village','Mobile','RST','Net kg','Gross value INR','Charges INR','Adjustments INR','Payable INR','Cleared INR','Pending INR','Outstanding INR','Status'])
     def safe(s):
         s=str(s)
         return "'"+s if s.lstrip().startswith(('=','+','-','@','\t','\r')) else s
     for x in db.scalars(q):
         ps=pay_summary(x)
-        writer.writerow([safe(x.number),x.purchase_date,safe(x.branch.name),safe(x.farmer.name),safe(x.farmer.village),safe(x.farmer.mobile),safe(x.rst_number),kg(x.net_kg),inr(x.gross_value),inr(x.weighbridge_charges+x.other_deductions),inr(x.round_adjustment),inr(x.payable),ps['cleared'],ps['pending'],ps['outstanding']])
+        writer.writerow([safe(x.number),x.purchase_date,safe(x.branch.name),safe(x.farmer.name),safe(x.farmer.village),safe(x.farmer.mobile),safe(x.rst_number),kg(x.net_kg),inr(x.gross_value),inr(x.weighbridge_charges+x.other_deductions),inr(x.round_adjustment),inr(x.payable),ps['cleared'],ps['pending'],ps['outstanding'],safe(x.status)])
     return Response('\ufeff'+output.getvalue(),media_type='text/csv; charset=utf-8',headers={'Content-Disposition':'attachment; filename="Farmkart_Purchases.csv"'})
 
 @app.get('/api/audit')
