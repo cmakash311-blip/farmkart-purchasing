@@ -1,0 +1,30 @@
+# DEVELOPMENT/INTEGRATION ONLY: DO NOT EXPOSE DIRECTLY TO INTERNET.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: farmkart
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Define a strong DB_PASSWORD in your environment}
+      POSTGRES_DB: farmkart
+    volumes:
+      - farmkart_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U farmkart -d farmkart"]
+      interval: 5s
+      timeout: 5s
+      retries: 8
+    restart: unless-stopped
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+psycopg://farmkart:${DB_PASSWORD}@db:5432/farmkart
+      APP_ENV: development
+      COOKIE_SECURE: "0" # change to 1 behind HTTPS proxy in production
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  farmkart_pgdata:
