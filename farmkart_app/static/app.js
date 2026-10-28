@@ -416,7 +416,68 @@ async function renderPurchases(){
 }
 function wireBills(){$$('[data-bill]').forEach(b=>b.onclick=()=>billModal(+b.dataset.bill).catch(e=>notify(e.message,'bad')))}
 let savedSubmission=null;
-async function renderNew(){if(!['OWNER','PURCHASE'].includes(state.user.role)){$('#view').innerHTML='<div class="notice bad">You do not have permission to create purchase bills.</div>';return}const farmers=await api('/farmers?limit=60');state.farmers=farmers;state.lineCount=0;savedSubmission=token();$('#view').innerHTML=title('New purchase bill','Enter farmer details, peanut weights, bardana / bags, rate and deductions.')+`<form id="purchase-form" class="purchase-layout"><div class="grid"><div class="panel"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:12px"><div class="panel-subtitle" style="margin:0">01 / ખેડૂત અને આગમન વિગત (Farmer & arrival)</div><div id="next-bill-badge" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;padding:4px 12px;border-radius:20px;font-weight:700;font-size:12px">બિલ નં: —</div></div><div class="form-grid two"><label>ફેક્ટરી (Factory) *<select id="purchase-branch" required>${state.branches.map(b=>choice(b.id,b.name,String(b.id)===state.branch)).join('')}</select></label><label>બિલ તારીખ (Bill Date) *<input id="bill-date" type="date" required></label><label>ખેડૂતનું નામ (Farmer Name) *<input id="farmer-name" list="farmer-datalist" required placeholder="ખેડૂતનું નામ લખો..." autocomplete="off"><datalist id="farmer-datalist">${farmers.map(f=>`<option value="${text(f.name)}" data-id="${f.id}" data-village="${text(f.village)}" data-mobile="${text(f.mobile||'')}">${text(f.name)} (${text(f.village)})</option>`).join('')}</datalist><input type="hidden" id="selected-farmer-id" value=""></label><label>ગામ (Village) *<input id="farmer-village" required placeholder="ગામનું નામ"></label><label>મોબાઈલ નંબર (Mobile No.)<input id="farmer-mobile" type="tel" maxlength="20" placeholder="મોબાઈલ નંબર"></label><label>RST / પાવતી નંબર (Pavati no.)<input id="rst" maxlength="80" placeholder="આગમન સંદર્ભ / વજન કાંટો નં"></label><label>વાહન નંબર (Vehicle no.)<input id="vehicle" maxlength="60" placeholder="GJ-…"></label></div></div><div class="panel"><div class="panel-subtitle">02 / Peanut purchase line items (કટ્ટા / બારદાન ગણતરી)</div><div id="purchase-lines"></div><button type="button" class="secondary" id="add-line">+ Add peanut variety / lot</button><p class="help">Bag tare is deducted automatically: Net kg = Gross kg − (Bags × Tare/bag + Kapat kg). Rates are ₹ per 20 kg.</p></div><div class="panel"><div class="panel-subtitle">03 / ખર્ચ અને કપાત (Charges & deductions)</div><div class="form-grid two"><label>કાંટા ખર્ચ — Weighbridge charges (₹)<input id="charges" type="number" value="0" min="0" step="0.01"></label><label>માર્કેટ / ટ્રાન્સપોર્ટ ખર્ચ — Market transport cost (₹)<input id="transport-cost" type="number" value="0" min="0" step="0.01" placeholder="0.00"></label><label>અન્ય કપાત — Other deductions (₹)<input id="deductions" type="number" value="0" min="0" step="0.01"></label><label>રાઉન્ડ ઓફ — Round adjustment (₹)<input id="adjust" type="number" value="0" step="0.01"></label><label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:6px;grid-column:1/-1;background:#fbf8f4;padding:12px;border-radius:8px;border:1px solid #ebdccb"><input id="unload-godown" type="checkbox" style="width:20px;height:20px;cursor:pointer;margin:0"><span style="font-size:13px;font-weight:700;color:#5a3e28">ગોડાઉન ઉતરાઈ (Unload at Go-down)</span></label><label style="grid-column:1/-1">નોંધ / રિમાર્ક્સ — Notes / remarks<textarea id="notes" rows="2" maxlength="1000" placeholder="ગુણવત્તા અથવા સ્પેશિયલ નોંધ..."></textarea></label></div></div><div class="panel payment-panel"><div class="panel-subtitle">ਪੇਮੇਨ੍ਟ ਸ੆ਟਲਮੇਨ੍ਟ (04 / Payment settlement)</div><div class="form-grid two"><label>ਆਜੇ ਚੂਕਵੇਲ ਰੋਕਡ — Paid today (Cash) ₹<input id="paid-cash" type="number" value="0" min="0" step="0.01" placeholder="0.00"></label><label>ਬਾਕੀ ਰੋਕਡ — Pay later (Cash) ₹<input id="pay-later-cash" type="number" value="0" min="0" step="0.01" placeholder="0.00"></label><label>ਬਾਕੀ ਰੋਕਡ ਤਾਰੀਖ — Pay later date<input id="pay-later-date" type="date"></label></div><div class="cheque-box"><div class="cheque-box-title">ਚੇਕ ਵਿਗਤ — Cheque details</div><div class="form-grid three"><label>ਚੇਕ ਨਂਬਰ — Cheque no.<input id="cheque-num" type="text" maxlength="30" placeholder="000001"></label><label>ਚੇਕ ਤਾਰੀਖ — Cheque date<input id="cheque-date" type="date"></label><label>ਚੇਕ ਰਕਮ — Cheque amount ₹<input id="cheque-amount" type="number" value="0" min="0" step="0.01" readonly class="cheque-auto-field"></label></div><div id="cheque-helper" class="cheque-helper"></div></div></div></div><div class="panel" style="position:sticky;top:15px"><div class="panel-subtitle">Live bill preview</div><div class="right-note">Final amounts will be recomputed and assigned a permanent bill number by the server.</div><div class="amount-box"><div class="amount-line"><span>Bags (કટ્ટા)</span><strong id="v-bags">0</strong></div><div class="amount-line"><span>Gross kg</span><strong id="v-gross">0</strong></div><div class="amount-line"><span>Bardana tare (kg)</span><strong id="v-bardana">0</strong></div><div class="amount-line"><span>Quality kapat (kg)</span><strong id="v-kapat">0</strong></div><div class="amount-line"><span>Net kg</span><strong id="v-net">0</strong></div><div class="amount-line"><span>Purchase value</span><strong id="v-value">₹0.00</strong></div><div class="amount-line"><span>Charges & deductions</span><strong id="v-deduct">₹0.00</strong></div><div class="amount-line final"><span>Farmer payable</span><span id="v-final">₹0.00</span></div></div><div class="pay-preview" id="pay-preview"><div class="pay-preview-title">ਚੂਕਵਣੀ ਸਾਰਾਂਸ਼ (Payment summary)</div><div class="amount-line"><span>ਆਜੇ ਰੋਕਡ (Cash today)</span><strong id="pv-cash">₹0.00</strong></div><div class="amount-line"><span>ਚੇਕ (Cheque)</span><strong id="pv-cheque">₹0.00</strong></div><div id="pv-cheque-line" class="amount-line" style="display:none"><span>ਚੇਕ ਵਿਗਤ</span><small id="pv-cheque-detail" style="color:var(--muted)"></small></div><div class="amount-line" style="border-top:1px solid #dfc7ba;margin-top:8px;padding-top:8px"><span>ਬਾਕੀ (Balance due)</span><strong id="pv-balance" style="color:#dc2626">₹0.00</strong></div></div><div id="bill-error" class="error-text"></div><button type="submit" class="primary full" id="post-bill" style="margin-top:16px">Post final purchase bill →</button><p class="right-note" style="margin-top:12px">Once posted, bills cannot be edited in this pilot. Verify all amounts before posting.</p></div></form>`;if(state.branch)$('#purchase-branch').value=state.branch;
+async function renderNew(){if(!['OWNER','PURCHASE'].includes(state.user.role)){$('#view').innerHTML='<div class="notice bad">You do not have permission to create purchase bills.</div>';return}const farmers=await api('/farmers?limit=60');state.farmers=farmers;state.lineCount=0;savedSubmission=token();$('#view').innerHTML=title('New purchase bill','Enter farmer details, peanut weights, bardana / bags, rate and deductions.')+`<form id="purchase-form" class="purchase-layout"><div class="grid"><div class="panel"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:12px"><div class="panel-subtitle" style="margin:0">01 / ખેડૂત અને આગમન વિગત (Farmer & arrival)</div><div id="next-bill-badge" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;padding:4px 12px;border-radius:20px;font-weight:700;font-size:12px">બિલ નં: —</div></div><div class="form-grid two"><label>ફેક્ટરી (Factory) *<select id="purchase-branch" required>${state.branches.map(b=>choice(b.id,b.name,String(b.id)===state.branch)).join('')}</select></label><label>બિલ તારીખ (Bill Date) *<input id="bill-date" type="date" required></label><label>ખેડૂતનું નામ (Farmer Name) *<input id="farmer-name" list="farmer-datalist" required placeholder="ખેડૂતનું નામ લખો..." autocomplete="off"><datalist id="farmer-datalist">${farmers.map(f=>`<option value="${text(f.name)}" data-id="${f.id}" data-village="${text(f.village)}" data-mobile="${text(f.mobile||'')}">${text(f.name)} (${text(f.village)})</option>`).join('')}</datalist><input type="hidden" id="selected-farmer-id" value=""></label><label>ગામ (Village) *<input id="farmer-village" required placeholder="ગામનું નામ"></label><label>મોબાઈલ નંબર (Mobile No.)<input id="farmer-mobile" type="tel" maxlength="20" placeholder="મોબાઈલ નંબર"></label><label>RST / પાવતી નંબર (Pavati no.)<input id="rst" maxlength="80" placeholder="આગમન સંદર્ભ / વજન કાંટો નં"></label><label>વાહન નંબર (Vehicle no.)<input id="vehicle" maxlength="60" placeholder="GJ-…"></label></div></div><div class="panel"><div class="panel-subtitle">02 / Peanut purchase line items (કટ્ટા / બારદાન ગણતરી)</div><div id="purchase-lines"></div><button type="button" class="secondary" id="add-line">+ Add peanut variety / lot</button><p class="help">Bag tare is deducted automatically: Net kg = Gross kg − (Bags × Tare/bag + Kapat kg). Rates are ₹ per 20 kg.</p></div><div class="panel"><div class="panel-subtitle">03 / ખર્ચ અને કપાત (Charges & deductions)</div><div class="form-grid two"><label>કાંટા ખર્ચ — Weighbridge charges (₹)<input id="charges" type="number" value="0" min="0" step="0.01"></label><label>માર્કેટ / ટ્રાન્સપોર્ટ ખર્ચ — Market transport cost (₹)<input id="transport-cost" type="number" value="0" min="0" step="0.01" placeholder="0.00"></label><label>અન્ય કપાત — Other deductions (₹)<input id="deductions" type="number" value="0" min="0" step="0.01"></label><label>રાઉન્ડ ઓફ — Round adjustment (₹)<input id="adjust" type="number" value="0" step="0.01"></label><label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:6px;grid-column:1/-1;background:#fbf8f4;padding:12px;border-radius:8px;border:1px solid #ebdccb"><input id="unload-godown" type="checkbox" style="width:20px;height:20px;cursor:pointer;margin:0"><span style="font-size:13px;font-weight:700;color:#5a3e28">ગોડાઉન ઉતરાઈ (Unload at Go-down)</span></label><label style="grid-column:1/-1">નોંધ / રિમાર્ક્સ — Notes / remarks<textarea id="notes" rows="2" maxlength="1000" placeholder="ગુણવત્તા અથવા સ્પેશિયલ નોંધ..."></textarea></label></div></div><div class="panel payment-panel"><div class="panel-subtitle">ਪੇਮੇਨ੍ਟ ਸ੆ਟਲਮੇਨ੍ਟ (04 / Payment settlement)</div><div class="form-grid two"><label>ਆਜੇ ਚੂਕਵੇਲ ਰੋਕਡ — Paid today (Cash) ₹<input id="paid-cash" type="number" value="0" min="0" step="0.01" placeholder="0.00"></label><label>ਬਾਕੀ ਰੋਕਡ — Pay later (Cash) ₹<input id="pay-later-cash" type="number" value="0" min="0" step="0.01" placeholder="0.00"></label><label>ਬਾਕੀ ਰੋਕਡ ਤਾਰੀਖ — Pay later date<input id="pay-later-date" type="date"></label></div><div class="cheque-box"><div class="cheque-box-title">ਚੇਕ ਵਿਗਤ — Cheque details</div><div class="form-grid three"><label>ਚੇਕ ਨਂਬਰ — Cheque no.<input id="cheque-num" type="text" maxlength="30" placeholder="000001"></label><label>ਚੇਕ ਤਾਰੀਖ — Cheque date<input id="cheque-date" type="date"></label><label>ਚੇਕ ਰਕਮ — Cheque amount ₹<input id="cheque-amount" type="number" value="0" min="0" step="0.01" readonly class="cheque-auto-field"></label></div><div id="cheque-helper" class="cheque-helper"></div></div></div></div><div class="panel live-slip-card" style="position:sticky;top:15px;background:#ffffff;border:2px solid #853d32;border-radius:12px;padding:16px;box-shadow:0 6px 20px rgba(0,0,0,0.06)">
+  <div class="slip-header" style="text-align:center;border-bottom:2px dashed #853d32;padding-bottom:10px;margin-bottom:12px">
+    <div style="font-size:11px;font-weight:800;letter-spacing:1px;color:#853d32;text-transform:uppercase">Farmkart Foods · ખરીદી પાવતી</div>
+    <div id="slip-branch-name" style="font-size:13px;font-weight:700;color:#333;margin-top:2px">Factory</div>
+  </div>
+  
+  <div class="slip-meta-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;font-size:11px;background:#fcfaf7;padding:8px 10px;border-radius:6px;border:1px solid #eee5dc;margin-bottom:12px">
+    <div><strong>બિલ નં:</strong> <span id="slip-bill-no" style="color:#853d32;font-weight:700">—</span></div>
+    <div><strong>તારીખ:</strong> <span id="slip-date">—</span></div>
+    <div style="grid-column:span 2"><strong>ખેડૂત:</strong> <span id="slip-farmer" style="font-weight:700">—</span></div>
+    <div><strong>ગામ:</strong> <span id="slip-village">—</span></div>
+    <div><strong>મોબાઈલ:</strong> <span id="slip-mobile">—</span></div>
+    <div><strong>વાહન:</strong> <span id="slip-vehicle">—</span></div>
+    <div><strong>RST:</strong> <span id="slip-rst">—</span></div>
+  </div>
+
+  <div class="slip-table-wrap" style="border:1px solid #e0d5c7;border-radius:6px;overflow:hidden;margin-bottom:12px">
+    <table style="width:100%;font-size:11px;text-align:right;border-collapse:collapse">
+      <thead style="background:#f4ede4;color:#6b5847;font-size:10px">
+        <tr>
+          <th style="text-align:left;padding:5px">જાત</th>
+          <th style="padding:5px">કટ્ટા</th>
+          <th style="padding:5px">ચોખ્ખું</th>
+          <th style="padding:5px">ભાવ/૨૦</th>
+          <th style="padding:5px">રકમ</th>
+        </tr>
+      </thead>
+      <tbody id="slip-lines-body">
+        <tr><td colspan="5" style="text-align:center;padding:10px;color:#999">લોટ દાખલ કરો</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="slip-totals" style="font-size:12px;background:#fdfcf9;padding:10px;border-radius:6px;border:1px solid #ede3d8;display:grid;gap:4px">
+    <div style="display:flex;justify-content:space-between"><span>કુલ વજન (Gross):</span><span id="slip-gross">0 kg</span></div>
+    <div style="display:flex;justify-content:space-between"><span>કુલ કપાત (Bardana+Kapat):</span><span id="slip-kapat">0 kg</span></div>
+    <div style="display:flex;justify-content:space-between;font-weight:700"><span>ચોખ્ખું વજન (Net):</span><span id="slip-net">0 kg</span></div>
+    <div style="display:flex;justify-content:space-between;border-top:1px dashed #ddd;padding-top:4px"><span>ખરીદી રકમ (Purchase):</span><span id="slip-gross-val">₹0.00</span></div>
+    <div id="slip-charges-row" style="display:flex;justify-content:space-between;color:#a84232"><span>કાંટા ખર્ચ:</span><span id="slip-charges">− ₹0.00</span></div>
+    <div id="slip-trans-row" style="display:none;justify-content:space-between;color:#a84232"><span>માર્કેટ / ટ્રાન્સપોર્ટ:</span><span id="slip-trans">− ₹0.00</span></div>
+    <div id="slip-deduct-row" style="display:none;justify-content:space-between;color:#a84232"><span>અન્ય કપાત:</span><span id="slip-deduct">− ₹0.00</span></div>
+    <div id="slip-godown-row" style="display:none;font-weight:700;color:#b45309;font-size:11px;margin-top:2px"><span>વિગત:</span><span>ગોડાઉન ઉતરાઈ</span></div>
+    <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;color:#853d32;border-top:2px solid #853d32;padding-top:6px;margin-top:2px">
+      <span>ચૂકવવાપાત્ર (Payable):</span>
+      <span id="slip-payable">₹0.00</span>
+    </div>
+  </div>
+
+  <div class="slip-payment-summary" style="margin-top:10px;background:#f0f7ee;border:1px solid #b8d9b0;border-radius:8px;padding:8px 10px;font-size:11px">
+    <div style="font-weight:800;color:#2e6336;margin-bottom:4px;text-transform:uppercase;font-size:10px">ચૂકવણી વિગત (Payment)</div>
+    <div style="display:flex;justify-content:space-between"><span>આજે રોકડ:</span><strong id="slip-paid-cash">₹0.00</strong></div>
+    <div style="display:flex;justify-content:space-between"><span>ચેક રકમ:</span><strong id="slip-chq-amt">₹0.00</strong></div>
+    <div id="slip-chq-info" style="display:none;font-size:10px;color:#555;margin-top:2px"></div>
+    <div style="display:flex;justify-content:space-between;border-top:1px dashed #b8d9b0;margin-top:4px;padding-top:4px">
+      <span>બાકી રોકડ (Due):</span><strong id="slip-balance" style="color:#dc2626">₹0.00</strong>
+    </div>
+  </div>
+
+  <div id="bill-error" class="error-text"></div>
+  <button type="submit" class="primary full" id="post-bill" style="margin-top:14px">Post final purchase bill →</button>
+  <p class="right-note" style="margin-top:10px;font-size:11px;text-align:center">Verify all amounts before posting.</p>
+</div></form>`;if(state.branch)$('#purchase-branch').value=state.branch;
   $('#add-line').onclick=()=>addLine();addLine();
   const todayISO=new Date().toISOString().split('T')[0];
   if($('#cheque-date'))$('#cheque-date').value=todayISO;
@@ -429,6 +490,7 @@ async function renderNew(){if(!['OWNER','PURCHASE'].includes(state.user.role)){$
       try{
         const seq = await api(`/purchases/next-number?branch_id=${bId}&purchase_date=${bDate}`);
         if($('#next-bill-badge')) $('#next-bill-badge').textContent = `બિલ નં: ${seq.formatted}`;
+        if($('#slip-bill-no')) $('#slip-bill-no').textContent = seq.formatted;
       }catch(e){}
     }
   }
@@ -478,32 +540,113 @@ async function renderNew(){if(!['OWNER','PURCHASE'].includes(state.user.role)){$
   $('#purchase-form').oninput=calculate;$('#purchase-form').onsubmit=submitBill}
 function addLine(){if(state.lineCount>=25){notify('Maximum 25 items per bill.','bad');return}const idx=state.lineCount++;const e=document.createElement('div');e.className='item-grid';e.innerHTML=`<label>Variety<input class="line-variety" value="Java" maxlength="80" required list="varieties"><datalist id="varieties"><option value="Java"><option value="Bold"><option value="TJ"><option value="In-shell"><option value="Other"></datalist></label><label>Bags (કટ્ટા)<input class="line-bags" type="number" min="0" max="100000" step="1" value="0" placeholder="0"></label><label>Tare/bag (kg)<input class="line-tare" type="number" min="0" max="50" step="0.001" value="1.000" placeholder="1.000"></label><label>Gross kg<input class="line-gross" type="number" min="0.001" max="10000000" step="0.001" required placeholder="1000"></label><label>Kapat kg<input class="line-kapat" type="number" min="0" max="10000000" step="0.001" value="0" placeholder="0"></label><label>Rate / 20kg (₹)<input class="line-rate" type="number" min="0.01" max="10000000" step="0.01" required placeholder="2200"></label><button type="button" class="mini-button" title="Remove line">×</button>`;e.querySelector('button').onclick=()=>{e.remove();calculate()};$('#purchase-lines').append(e);calculate()}
 function lines(){return $$('#purchase-lines .item-grid').map(r=>({variety:r.querySelector('.line-variety').value.trim(),bag_count:Math.max(0,parseInt(r.querySelector('.line-bags').value||0,10)),bag_tare_kg:r.querySelector('.line-tare').value||'0',gross_kg:r.querySelector('.line-gross').value,kapat_kg:r.querySelector('.line-kapat').value||'0',rate_per_20kg:r.querySelector('.line-rate').value}))}
-function calculate(){const all=lines(),n=v=>Number(v||0);let totalBags=0,gross=0,bardana=0,qualityKapat=0,val=0;for(const x of all){const bags=n(x.bag_count);const tare=n(x.bag_tare_kg);const lineBardana=bags*tare;const lineQuality=n(x.kapat_kg);const lineTotalKapat=lineBardana+lineQuality;const lineGross=n(x.gross_kg);const lineNet=Math.max(0,lineGross-lineTotalKapat);const rate=n(x.rate_per_20kg);totalBags+=bags;gross+=lineGross;bardana+=lineBardana;qualityKapat+=lineQuality;val+=Math.round(lineNet*rate/20*100)/100}const totalKapat=bardana+qualityKapat;const net=Math.max(0,gross-totalKapat);const transportCost=n($('#transport-cost')?.value);const deduct=n($('#charges').value)+n($('#deductions').value)+transportCost;const end=val-deduct+n($('#adjust').value);if($('#v-bags'))$('#v-bags').textContent=totalBags;$('#v-gross').textContent=number(gross);if($('#v-bardana'))$('#v-bardana').textContent=number(bardana);$('#v-kapat').textContent=number(qualityKapat);$('#v-net').textContent=number(net);$('#v-value').textContent=money(val);$('#v-deduct').textContent=money(deduct);$('#v-final').textContent=money(end);
-  // Point 1: auto-calc cheque = payable - cash paid
+function calculate(){
+  const all=lines(),n=v=>Number(v||0);
+  let totalBags=0,gross=0,bardana=0,qualityKapat=0,val=0;
+  const lineRows=[];
+  for(const x of all){
+    const bags=n(x.bag_count);
+    const tare=n(x.bag_tare_kg);
+    const lineBardana=bags*tare;
+    const lineQuality=n(x.kapat_kg);
+    const lineTotalKapat=lineBardana+lineQuality;
+    const lineGross=n(x.gross_kg);
+    const lineNet=Math.max(0,lineGross-lineTotalKapat);
+    const rate=n(x.rate_per_20kg);
+    const lineAmount=Math.round(lineNet*rate/20*100)/100;
+    totalBags+=bags;gross+=lineGross;bardana+=lineBardana;qualityKapat+=lineQuality;val+=lineAmount;
+    lineRows.push(`<tr>
+      <td style="text-align:left;padding:4px">${text(x.variety||'Java')}</td>
+      <td style="padding:4px">${bags}</td>
+      <td style="padding:4px">${number(lineNet)}</td>
+      <td style="padding:4px">₹${number(rate)}</td>
+      <td style="padding:4px;font-weight:700">₹${number(lineAmount)}</td>
+    </tr>`);
+  }
+  const totalKapat=bardana+qualityKapat;
+  const net=Math.max(0,gross-totalKapat);
+  const weighCharges=n($('#charges')?.value);
+  const transportCost=n($('#transport-cost')?.value);
+  const otherDeduct=n($('#deductions')?.value);
+  const adjust=n($('#adjust')?.value);
+  const deduct=weighCharges+otherDeduct+transportCost;
+  const end=Math.max(0,val-deduct+adjust);
+
+  // Update Live Gujarati Slip Table & Totals (Point 5)
+  if($('#slip-lines-body')){
+    $('#slip-lines-body').innerHTML=lineRows.length?lineRows.join(''):'<tr><td colspan="5" style="text-align:center;padding:10px;color:#999">લોટ દાખલ કરો</td></tr>';
+  }
+  if($('#slip-gross')) $('#slip-gross').textContent = `${number(gross)} kg (${totalBags} કટ્ટા)`;
+  if($('#slip-kapat')) $('#slip-kapat').textContent = `${number(totalKapat)} kg`;
+  if($('#slip-net')) $('#slip-net').textContent = `${number(net)} kg`;
+  if($('#slip-gross-val')) $('#slip-gross-val').textContent = money(val);
+  if($('#slip-charges')) $('#slip-charges').textContent = `− ${money(weighCharges)}`;
+  
+  if($('#slip-trans-row')){
+    if(transportCost>0){
+      $('#slip-trans-row').style.display='flex';
+      $('#slip-trans').textContent=`− ${money(transportCost)}`;
+    } else {
+      $('#slip-trans-row').style.display='none';
+    }
+  }
+  if($('#slip-deduct-row')){
+    if(otherDeduct>0){
+      $('#slip-deduct-row').style.display='flex';
+      $('#slip-deduct').textContent=`− ${money(otherDeduct)}`;
+    } else {
+      $('#slip-deduct-row').style.display='none';
+    }
+  }
+  if($('#slip-godown-row')){
+    $('#slip-godown-row').style.display=$('#unload-godown')?.checked?'flex':'none';
+  }
+  if($('#slip-payable')) $('#slip-payable').textContent = money(end);
+
+  // Live Meta: Farmer, Village, Mobile, Vehicle, RST, Date, Branch
+  const fName=$('#farmer-name')?.value.trim();
+  const fVillage=$('#farmer-village')?.value.trim();
+  const fMobile=$('#farmer-mobile')?.value.trim();
+  const vNum=$('#vehicle')?.value.trim();
+  const rstNum=$('#rst')?.value.trim();
+  const bDate=$('#bill-date')?.value;
+  const bSelect=$('#purchase-branch');
+  const bName=bSelect?.options[bSelect.selectedIndex]?.text||'Factory';
+
+  if($('#slip-farmer')) $('#slip-farmer').textContent = fName||'—';
+  if($('#slip-village')) $('#slip-village').textContent = fVillage||'—';
+  if($('#slip-mobile')) $('#slip-mobile').textContent = fMobile||'—';
+  if($('#slip-vehicle')) $('#slip-vehicle').textContent = vNum||'—';
+  if($('#slip-rst')) $('#slip-rst').textContent = rstNum||'—';
+  if($('#slip-date')) $('#slip-date').textContent = bDate||'—';
+  if($('#slip-branch-name')) $('#slip-branch-name').textContent = bName;
+
+  // Point 1: Auto-calc Cheque and Settlement Breakdown
   const cashPaidEl=$('#paid-cash');const chequeEl=$('#cheque-amount');
   if(cashPaidEl&&chequeEl){
     const cashPaid=n(cashPaidEl.value);
     const autoChq=Math.max(0,Math.round((end-cashPaid)*100)/100);
     chequeEl.value=autoChq.toFixed(2);
     const helper=$('#cheque-helper');
-    const gujaratiLabel='ਚੇਕ ਰਕਮ: ₹ ';
-    if(helper)helper.textContent=autoChq>0?(gujaratiLabel+autoChq.toLocaleString('en-IN',{minimumFractionDigits:2})):'';
-    const pvCash=$('#pv-cash');const pvCheque=$('#pv-cheque');
-    const pvBal=$('#pv-balance');const pvChqLine=$('#pv-cheque-line');
-    const pvChqDetail=$('#pv-cheque-detail');
-    if(pvCash)pvCash.textContent=money(cashPaid);
-    if(pvCheque)pvCheque.textContent=money(autoChq);
+    if(helper)helper.textContent=autoChq>0?`ચેક રકમ: ₹ ${autoChq.toLocaleString('en-IN',{minimumFractionDigits:2})}`:'';
+    
+    if($('#slip-paid-cash')) $('#slip-paid-cash').textContent = money(cashPaid);
+    if($('#slip-chq-amt')) $('#slip-chq-amt').textContent = money(autoChq);
+    
     const chqNum=$('#cheque-num')?.value.trim();
     const chqDate=$('#cheque-date')?.value;
-    if(pvChqLine&&pvChqDetail){
+    const chqInfoEl=$('#slip-chq-info');
+    if(chqInfoEl){
       if(autoChq>0&&chqNum){
-        pvChqLine.style.display='flex';
-        pvChqDetail.textContent=chqNum+' | '+(chqDate||'—')+' | ₹'+autoChq.toLocaleString('en-IN',{minimumFractionDigits:2})
-      }else pvChqLine.style.display='none'
+        chqInfoEl.style.display='block';
+        chqInfoEl.textContent=`ચેક નં: ${chqNum} (${chqDate||'—'})`;
+      } else {
+        chqInfoEl.style.display='none';
+      }
     }
     const payLater=n($('#pay-later-cash')?.value);
     const balance=Math.max(0,Math.round((end-cashPaid-autoChq-payLater)*100)/100);
-    if(pvBal)pvBal.textContent=money(balance)
+    if($('#slip-balance')) $('#slip-balance').textContent = money(balance);
   }
 }
 async function submitBill(e){e.preventDefault();const err=$('#bill-error');err.textContent='';const all=lines();if(!all.length){err.textContent='Add at least one peanut purchase line.';return}if(all.some(x=>(Number(x.bag_count||0)*Number(x.bag_tare_kg||0)+Number(x.kapat_kg||0))>=Number(x.gross_kg||0))){err.textContent='Total deductions (Bardana + Kapat) cannot equal or exceed gross weight.';return}const farmerName = $('#farmer-name')?.value.trim();
