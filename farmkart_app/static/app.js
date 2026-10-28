@@ -1,5 +1,5 @@
 'use strict';
-const state={user:null,csrf:'',branches:[],branch:'',view:'dashboard',farmers:[],lineCount:0,lastBill:null};
+const state={user:null,csrf:'',branches:[],branch:'',view:'dashboard',farmers:[],lineCount:0,lastBill:null,lang:localStorage.getItem('fkf_lang')||'gu'};
 const $=s=>document.querySelector(s);
 const money=v=>'₹'+Number(v||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
 const number=v=>Number(v||0).toLocaleString('en-IN',{maximumFractionDigits:3});
@@ -8,17 +8,56 @@ const choice=(val,label,selected=false)=>`<option value="${text(val)}" ${selecte
 const token=()=>Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');
 const el=(tag,html,cls)=>`<${tag}${cls?' class="'+cls+'"':''}>${html}</${tag}>`;
 const title=(label,desc,action='')=>`<div class="page-head"><div><div class="eyebrow">FARMKART FOODS / ${text(state.branches.find(b=>String(b.id)===state.branch)?.name||'ALL FACTORIES')}</div><h2>${label}</h2><p>${desc}</p></div>${action}</div>`;
+
+const I18N={
+  en:{
+    lang_btn:'English',dashboard:'Overview',new:'New purchase bill',purchases:'Purchase register',
+    farmers:'Farmers & Khata',payments:'Cheques & payments',reports:'Reports & exports',
+    users:'Staff & user management',audit:'Audit history',factory:'Factory',farmer:'Farmer',
+    village:'Village',mobile:'Mobile',variety:'Variety',bags:'Bags (કટ્ટા)',tare:'Tare/bag (kg)',
+    gross_kg:'Gross kg',kapat_kg:'Kapat kg',net_kg:'Net kg',rate_20kg:'Rate / 20kg (₹)',
+    purchase_val:'Purchase value',farmer_payable:'Farmer payable',charges:'Weighbridge charges (₹)',
+    deductions:'Other deductions (₹)',adjust:'Round adjustment (₹)',post_bill:'Post final purchase bill →'
+  },
+  gu:{
+    lang_btn:'ગુજરાતી',dashboard:'ડેશબોર્ડ (ઓવરવ્યૂ)',new:'નવી ખરીદી પાવતી',purchases:'ખરીદી રજીસ્ટર',
+    farmers:'ખેડૂત યાદી અને ખાતાવહી',payments:'ચૂકવણી અને ચેક',reports:'અહેવાલ અને નિકાસ',
+    users:'કર્મચારી વ્યવસ્થાપન',audit:'ઓડિટ હિસ્ટ્રી',factory:'ફેક્ટરી',farmer:'ખેડૂત',
+    village:'ગામ',mobile:'મોબાઈલ',variety:'મગફળી જાત',bags:'કટ્ટા (બોરી)',tare:'બારદાન વજન (કિલો)',
+    gross_kg:'કુલ વજન (કિલો)',kapat_kg:'કપાત (કિલો)',net_kg:'ચોખ્ખું વજન (કિલો)',rate_20kg:'ભાવ / મણ (૨૦ કિલો)',
+    purchase_val:'ખરીદી રકમ',farmer_payable:'ચૂકવવાપાત્ર ચોખ્ખી રકમ',charges:'કાંટા ખર્ચ (₹)',
+    deductions:'અન્ય કપાત (₹)',adjust:'રાઉન્ડ ઓફ (₹)',post_bill:'ખરીદી પાવતી કન્ફર્મ કરો →'
+  }
+};
+function t(key){
+  const l=state.lang||'gu';
+  return (I18N[l]&&I18N[l][key])||(I18N.en&&I18N.en[key])||key;
+}
+function applyLanguage(){
+  if($('#lang-label'))$('#lang-label').textContent=state.lang==='gu'?'ગુજરાતી':'English';
+  const navMap={dashboard:t('dashboard'),new:t('new'),purchases:t('purchases'),farmers:t('farmers'),payments:t('payments'),reports:t('reports'),users:t('users'),audit:t('audit')};
+  $$('#navigation .nav').forEach(btn=>{
+    const v=btn.dataset.view;
+    if(navMap[v]){
+      const nodes=btn.childNodes;
+      nodes[nodes.length-1].textContent=' '+navMap[v];
+    }
+  });
+  if(state.view&&$('#top-title')){
+    $('#top-title').textContent=navMap[state.view]||state.view;
+  }
+}
 function notify(message,kind='good'){const e=$('#notice');e.textContent=message;e.className='notice '+kind;e.hidden=false;clearTimeout(notify.t);notify.t=setTimeout(()=>e.hidden=true,6500)}
 async function api(path,method='GET',body){let options={method,headers:{}};if(body!==undefined){options.headers['Content-Type']='application/json';options.body=JSON.stringify(body)}if(!['GET','HEAD'].includes(method))options.headers['X-CSRF-Token']=state.csrf;let r;try{r=await fetch('/api'+path,options)}catch{throw Error('Cannot reach the server. Check your internet connection. Do not submit the transaction repeatedly.')}let obj;try{obj=await r.json()}catch{throw Error('Invalid response from the server')}if(!r.ok){if(r.status===401){showLogin()}throw Error(typeof obj.detail==='string'?obj.detail:'Request failed')}return obj}
 function showLogin(){state.user=null;$('#shell').hidden=true;$('#login').hidden=false;$('#password').value=''}
-async function initialize(){try{const me=await api('/me');state.user=me;state.csrf=me.csrf_token;state.branches=await api('/branches');state.branch=me.role==='OWNER'?'':String(me.branch_id);$('#login').hidden=true;$('#shell').hidden=false;$('#user-name').textContent=me.name;$('#user-role').textContent=me.role;$('#users-nav').hidden=me.role!=='OWNER';$('#audit-nav').hidden=me.role!=='OWNER';const branchSelector=$('#branch-filter');branchSelector.innerHTML=(me.role==='OWNER'?choice('','All factories'): '')+state.branches.map(b=>choice(b.id,b.name)).join('');branchSelector.value=state.branch;branchSelector.disabled=me.role!=='OWNER';navigate('dashboard')}catch(e){showLogin()}}
+async function initialize(){try{const me=await api('/me');state.user=me;state.csrf=me.csrf_token;state.branches=await api('/branches');state.branch=me.role==='OWNER'?'':String(me.branch_id);$('#login').hidden=true;$('#shell').hidden=false;$('#user-name').textContent=me.name;$('#user-role').textContent=me.role;$('#users-nav').hidden=me.role!=='OWNER';$('#audit-nav').hidden=me.role!=='OWNER';const branchSelector=$('#branch-filter');branchSelector.innerHTML=(me.role==='OWNER'?choice('','All factories'): '')+state.branches.map(b=>choice(b.id,b.name)).join('');branchSelector.value=state.branch;branchSelector.disabled=me.role!=='OWNER';applyLanguage();if($('#lang-toggle')){$('#lang-toggle').onclick=()=>{state.lang=state.lang==='gu'?'en':'gu';localStorage.setItem('fkf_lang',state.lang);applyLanguage();navigate(state.view||'dashboard')}};navigate('dashboard')}catch(e){showLogin()}}
 $('#login-form').addEventListener('submit',async e=>{e.preventDefault();const btn=e.target.querySelector('button');btn.disabled=true;$('#login-error').hidden=true;try{const data=await api('/login','POST',{username:$('#username').value,password:$('#password').value});state.csrf=data.csrf_token;await initialize()}catch(err){$('#login-error').textContent=err.message;$('#login-error').hidden=false}finally{btn.disabled=false}});
 $('#logout').onclick=async()=>{try{await api('/logout','POST',{})}finally{showLogin()}};
 $('#branch-filter').onchange=e=>{state.branch=e.target.value;navigate(state.view)};
 $('#mobile-menu').onclick=()=>$('#sidebar').classList.toggle('open');
 $$('#navigation .nav').forEach(btn=>btn.onclick=()=>navigate(btn.dataset.view));
 function $$(s){return Array.from(document.querySelectorAll(s))}
-function navigate(view){state.view=view;$('#sidebar').classList.remove('open');$$('#navigation .nav').forEach(b=>b.classList.toggle('active',b.dataset.view===view));const names={dashboard:'Overview',new:'New purchase bill',purchases:'Purchase register',farmers:'Farmers',payments:'Cheques & payments',reports:'Reports & exports',users:'Staff & user management',audit:'Audit history'};$('#top-title').textContent=names[view];$('#view').innerHTML='<div class="panel"><div class="empty">Loading…</div></div>';const f=({dashboard:renderDashboard,new:renderNew,purchases:renderPurchases,farmers:renderFarmers,payments:renderPayments,reports:renderReports,users:renderUsers,audit:renderAudit})[view];f().catch(err=>{$('#view').innerHTML=`<div class="notice bad">${text(err.message)}</div>`})}
+function navigate(view){state.view=view;$('#sidebar').classList.remove('open');$$('#navigation .nav').forEach(b=>b.classList.toggle('active',b.dataset.view===view));applyLanguage();$('#view').innerHTML='<div class="panel"><div class="empty">Loading…</div></div>';const f=({dashboard:renderDashboard,new:renderNew,purchases:renderPurchases,farmers:renderFarmers,payments:renderPayments,reports:renderReports,users:renderUsers,audit:renderAudit})[view];f().catch(err=>{$('#view').innerHTML=`<div class="notice bad">${text(err.message)}</div>`})}
 function scope(){return state.branch?'?branch_id='+encodeURIComponent(state.branch):''}
 function table(headers,rows,empty='No records found'){return `<div class="table-wrap"><table><thead><tr>${headers.map(h=>`<th>${text(h)}</th>`).join('')}</tr></thead><tbody>${rows.length?rows.join(''):`<tr><td class="empty" colspan="${headers.length}"><strong>${text(empty)}</strong>New records will appear here.</td></tr>`}</tbody></table></div>`}
 async function renderDashboard(){let [d,all]=await Promise.all([api('/dashboard'+scope()),api('/purchases'+scope())]);$('#view').innerHTML=title('Purchasing overview','Live purchasing visibility across your authorized factories.',`<button class="primary" id="quick-new">+ New purchase</button>`)+`<div class="grid four"><div class="stat"><div class="kicker">Today’s purchases <span class="emoji">▤</span></div><div class="number">${d.today_bills}</div><div class="foot">Bills posted today</div></div><div class="stat"><div class="kicker">Today’s quantity <span class="emoji">♧</span></div><div class="number">${number(d.today_kg)} <small>kg</small></div><div class="foot">Net peanut weight</div></div><div class="stat"><div class="kicker">Today’s purchase value <span class="emoji">₹</span></div><div class="number">${money(d.today_value)}</div><div class="foot">After charges and adjustments</div></div><div class="stat"><div class="kicker">Outstanding payments <span class="emoji">◷</span></div><div class="number">${money(d.outstanding)}</div><div class="foot">Includes pending cheques / bank transfers</div></div></div><div class="grid two" style="margin-top:21px"><div class="panel"><h3>All-time purchasing</h3><div class="detail-grid"><div><small>Total bills</small><strong>${d.all_bills}</strong></div><div><small>Total net weight</small><strong>${number(d.all_kg)} kg</strong></div><div><small>Total payable</small><strong>${money(d.total_purchase_value)}</strong></div></div></div><div class="panel"><h3>Payment instruments</h3><div class="stat" style="border:0;box-shadow:none;padding:0"><div class="kicker">Cheque / bank transfer pending clearance</div><div class="number">${money(d.pending_instruments)}</div></div></div></div><div class="panel" style="margin-top:20px"><div class="row" style="justify-content:space-between"><h3>Recent purchase bills</h3><button class="secondary" id="all-purchases">View all →</button></div>${table(['Bill','Factory','Farmer','Date','Net kg','Payable'],all.slice(0,8).map(p=>`<tr><td><button class="link" data-bill="${p.id}">${text(p.number)}</button></td><td>${text(p.branch)}</td><td>${text(p.farmer)}</td><td>${text(p.date)}</td><td>${number(p.net_kg)}</td><td>${money(p.payable)}</td></tr>`),'No purchase bills yet')}</div>`;$('#quick-new').onclick=()=>navigate('new');$('#all-purchases').onclick=()=>navigate('purchases');wireBills()}
@@ -402,7 +441,8 @@ async function billModal(id){
         <h3>Purchase bill ${text(p.number)} ${isVoid?'<span class="pill bounced">VOIDED</span>':''}</h3>
         <div class="row" style="gap:8px">
           ${canVoid?`<button class="outline-btn" style="color:var(--bad, #dc2626);border-color:var(--bad, #dc2626)" id="void-bill-btn">Cancel / Void bill</button>`:''}
-          <button class="primary" id="print-bill">Print receipt</button>
+          <button class="outline-btn" style="background:#fefbf6;border-color:#b45309;color:#b45309;font-weight:700" id="print-thermal">🖨 80mm Thermal (થર્મલ)</button>
+          <button class="primary" id="print-bill">Print receipt (A4/A5)</button>
         </div>
       </div>
       ${isVoid?`<div class="callout" style="border-left-color:var(--bad, #dc2626);background:#fee2e2;color:#991b1b;font-weight:600;margin-bottom:16px">⚠ THIS BILL HAS BEEN VOIDED / CANCELLED. All weights and balances are excluded from accounting and live reports.</div>`:''}
@@ -410,37 +450,37 @@ async function billModal(id){
     <div class="receipt ${isVoid?'voided':''}">
       ${isVoid?`<div style="text-align:center;color:#dc2626;font-size:1.3rem;font-weight:bold;letter-spacing:2px;border:2px dashed #dc2626;padding:6px;margin-bottom:14px">VOIDED / રદ કરેલ</div>`:''}
       <div class="receipt-header">
-        <h2>Farmkart Foods</h2>
-        <p>PEANUT PURCHASE RECEIPT · ${text(p.branch)}</p>
-        <p>કૃષિ ઉત્પાદન ખરીદી રસીદ</p>
+        <h2>Farmkart Foods · ફાર્મકાર્ટ ફૂડ્સ</h2>
+        <p>PEANUT PURCHASE RECEIPT · મગફળી ખરીદી પાવતી</p>
+        <p>Factory / ફેક્ટરી: <strong>${text(p.branch)}</strong></p>
       </div>
       <div class="receipt-grid">
-        <div>Bill no.: <strong>${text(p.number)}</strong></div>
-        <div>Date: <strong>${text(p.date)}</strong></div>
-        <div>Farmer: <strong>${text(p.farmer)}</strong></div>
-        <div>Village: <strong>${text(p.village)}</strong></div>
-        <div>Mobile: <strong>${text(p.mobile||'—')}</strong></div>
+        <div>Bill no. / બિલ નં: <strong>${text(p.number)}</strong></div>
+        <div>Date / તારીખ: <strong>${text(p.date)}</strong></div>
+        <div>Farmer / ખેડૂત: <strong>${text(p.farmer)}</strong></div>
+        <div>Village / ગામ: <strong>${text(p.village)}</strong></div>
+        <div>Mobile / મો.: <strong>${text(p.mobile||'—')}</strong></div>
         <div>RST / Pavati: <strong>${text(p.rst||'—')}</strong></div>
-        <div>Vehicle: <strong>${text(p.vehicle||'—')}</strong></div>
-        <div>Total bags: <strong>${p.total_bags||0}</strong></div>
+        <div>Vehicle / વાહન: <strong>${text(p.vehicle||'—')}</strong></div>
+        <div>Total bags / કટ્ટા: <strong>${p.total_bags||0}</strong></div>
       </div>
       <table>
-        <thead><tr><th>Peanut variety</th><th>Bags (કટ્ટા)</th><th>Tare/bag</th><th>Gross kg</th><th>Kapat kg</th><th>Net kg</th><th>₹ / 20kg</th><th>Amount</th></tr></thead>
+        <thead><tr><th>Peanut variety<br>મગફળી જાત</th><th>Bags<br>કટ્ટા</th><th>Tare/bag<br>બારદાન</th><th>Gross kg<br>કુલ વજન</th><th>Kapat kg<br>કપાત</th><th>Net kg<br>ચોખ્ખું</th><th>₹ / 20kg<br>ભાવ/મણ</th><th>Amount<br>રકમ</th></tr></thead>
         <tbody>${lines}</tbody>
       </table>
-      <div style="max-width:320px;margin-left:auto;margin-top:18px">
-        <div class="amount-line"><span>Gross purchase</span><strong>${money(p.gross_value)}</strong></div>
-        <div class="amount-line"><span>Weighbridge</span><strong>− ${money(p.weighbridge_charges)}</strong></div>
-        <div class="amount-line"><span>Other deduction</span><strong>− ${money(p.other_deductions)}</strong></div>
-        <div class="amount-line"><span>Round adjustment</span><strong>${money(p.round_adjustment)}</strong></div>
-        <div class="amount-line final"><span>Farmer payable</span><strong>${money(p.payable)}</strong></div>
+      <div style="max-width:340px;margin-left:auto;margin-top:18px">
+        <div class="amount-line"><span>Gross purchase / કુલ ખરીદી</span><strong>${money(p.gross_value)}</strong></div>
+        <div class="amount-line"><span>Weighbridge / કાંટા ખર્ચ</span><strong>− ${money(p.weighbridge_charges)}</strong></div>
+        <div class="amount-line"><span>Other deduction / અન્ય કપાત</span><strong>− ${money(p.other_deductions)}</strong></div>
+        <div class="amount-line"><span>Round adjustment / રાઉન્ડ ઓફ</span><strong>${money(p.round_adjustment)}</strong></div>
+        <div class="amount-line final"><span>Farmer payable / ચોખ્ખી ચૂકવવાપાત્ર રકમ</span><strong>${money(p.payable)}</strong></div>
       </div>
-      ${p.notes?`<div style="margin-top:14px;font-size:0.85rem;color:var(--muted);white-space:pre-wrap"><strong>Notes:</strong> ${text(p.notes)}</div>`:''}
+      ${p.notes?`<div style="margin-top:14px;font-size:0.85rem;color:var(--muted);white-space:pre-wrap"><strong>Notes / નોંધ:</strong> ${text(p.notes)}</div>`:''}
       <div class="receipt-foot">
-        <small>Farmer signature</small>
-        <small>Authorized Farmkart signatory</small>
+        <small>ખેડૂત સહી (Farmer signature)</small>
+        <small>અધિકૃત સહી (Authorized signatory)</small>
       </div>
-      <p class="help" style="text-align:center">Computer-generated pilot receipt. Verify statutory document requirements before production.</p>
+      <p class="help" style="text-align:center">Computer-generated receipt · કમ્પ્યુટર જનરેટેડ ખરીદી પાવતી</p>
     </div>
     <div class="no-print">
       <div class="divider"></div>
@@ -454,7 +494,18 @@ async function billModal(id){
       ${!isVoid && ['OWNER','ACCOUNTS'].includes(state.user.role)&&Number(p.payments_summary.unallocated)>0?`<button id="record-payment" class="primary" style="margin-top:17px">+ Record payment</button>`:''}
     </div>
   `);
+  function printThermalReceipt(){
+    document.body.classList.add('printing-thermal');
+    const r=$('.receipt');
+    if(r)r.classList.add('thermal-receipt');
+    window.print();
+    setTimeout(()=>{
+      document.body.classList.remove('printing-thermal');
+      if(r)r.classList.remove('thermal-receipt');
+    },1000);
+  }
   $('#print-bill').onclick=()=>window.print();
+  $('#print-thermal').onclick=()=>printThermalReceipt();
   if($('#record-payment'))$('#record-payment').onclick=()=>paymentModal(p);
   if($('#void-bill-btn'))$('#void-bill-btn').onclick=()=>voidBillModal(p.id,p.number);
 }
