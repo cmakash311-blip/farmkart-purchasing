@@ -317,6 +317,9 @@ async function renderPurchases(){
         </div>
       </div>
 
+      <!-- Top KPI Summary Grid (Video 02:54) -->
+      <div id="purchase-kpi-grid" style="display:none;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:12px;margin:16px 0"></div>
+
       <!-- Variety summary bar (Point 2) -->
       <div id="variety-summary-container" style="display:none;margin:14px 0;background:#fbf8f4;border:1px solid #ebdccb;border-radius:10px;padding:12px">
         <div style="font-size:11px;font-weight:800;color:#7a5c3a;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">જાત મુજબ કુલ આંકડા (Purchased Variety Summary)</div>
@@ -387,6 +390,7 @@ async function renderPurchases(){
       $('#purchase-count').textContent = 'No matching purchase bills found.';
       $('#purchase-table').innerHTML = '<div class="empty"><strong>No purchase bills found</strong>Try clearing search filters.</div>';
       $('#variety-summary-container').style.display = 'none';
+      if($('#purchase-kpi-grid')) $('#purchase-kpi-grid').style.display = 'none';
       return;
     }
 
@@ -396,6 +400,50 @@ async function renderPurchases(){
     const totalBags = allLoadedBills.reduce((acc, b) => acc + (b.status!=='VOID'?Number(b.total_bags||0):0), 0);
 
     $('#purchase-count').textContent = `Showing ${totalBills} purchase bill${totalBills===1?'':'s'} | Total Net: ${number(totalNetKg)} kg (${totalBags} bags) | Total Payable: ${money(totalPayable)}`;
+
+    // Top KPI Metric Cards (Video 02:54)
+    let kpiBills = 0, kpiCash = 0, kpiCheques = 0, kpiChequeAmt = 0, kpiGrandTotal = 0;
+    allLoadedBills.forEach(b => {
+      if(b.status !== 'VOID'){
+        kpiBills++;
+        const cash = Number((b.cash_paid || '0').replace(/[^0-9.]/g, '')) || 0;
+        const chq = Number((b.cheque_amount || '0').replace(/[^0-9.]/g, '')) || 0;
+        const payable = Number((b.payable || '0').replace(/[^0-9.]/g, '')) || 0;
+        kpiCash += cash;
+        if(chq > 0 || (b.cheque_number && b.cheque_number.trim())){
+          kpiCheques++;
+          kpiChequeAmt += chq;
+        }
+        kpiGrandTotal += payable;
+      }
+    });
+
+    const kpiGrid = $('#purchase-kpi-grid');
+    if(kpiGrid){
+      kpiGrid.style.display = 'grid';
+      kpiGrid.innerHTML = `
+        <div class="kpi-card" style="background:#ffffff;border:1px solid #ebdccb;border-radius:10px;padding:12px 14px;box-shadow:0 2px 6px rgba(0,0,0,0.03)">
+          <div style="font-size:11px;font-weight:700;color:#7a5c3a;text-transform:uppercase;letter-spacing:0.5px">કુલ બિલ · Total Bills</div>
+          <div style="font-size:20px;font-weight:800;color:#1e293b;margin-top:4px">${kpiBills}</div>
+        </div>
+        <div class="kpi-card" style="background:#ffffff;border:1px solid #ebdccb;border-radius:10px;padding:12px 14px;box-shadow:0 2px 6px rgba(0,0,0,0.03)">
+          <div style="font-size:11px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:0.5px">કુલ રોકડ · Total Cash</div>
+          <div style="font-size:20px;font-weight:800;color:#15803d;margin-top:4px">${money(kpiCash)}</div>
+        </div>
+        <div class="kpi-card" style="background:#ffffff;border:1px solid #ebdccb;border-radius:10px;padding:12px 14px;box-shadow:0 2px 6px rgba(0,0,0,0.03)">
+          <div style="font-size:11px;font-weight:700;color:#2563eb;text-transform:uppercase;letter-spacing:0.5px">કુલ ચેક · Total Cheques</div>
+          <div style="font-size:20px;font-weight:800;color:#1e293b;margin-top:4px">${kpiCheques}</div>
+        </div>
+        <div class="kpi-card" style="background:#ffffff;border:1px solid #ebdccb;border-radius:10px;padding:12px 14px;box-shadow:0 2px 6px rgba(0,0,0,0.03)">
+          <div style="font-size:11px;font-weight:700;color:#2563eb;text-transform:uppercase;letter-spacing:0.5px">ચેક રકમ · Cheque Amount</div>
+          <div style="font-size:20px;font-weight:800;color:#2563eb;margin-top:4px">${money(kpiChequeAmt)}</div>
+        </div>
+        <div class="kpi-card" style="background:#fdf9f4;border:1.5px solid #853d32;border-radius:10px;padding:12px 14px;box-shadow:0 2px 6px rgba(0,0,0,0.03)">
+          <div style="font-size:11px;font-weight:800;color:#853d32;text-transform:uppercase;letter-spacing:0.5px">કુલ રકમ · Grand Total</div>
+          <div style="font-size:20px;font-weight:800;color:#853d32;margin-top:4px">${money(kpiGrandTotal)}</div>
+        </div>
+      `;
+    }
 
     // Group bills by date (YYYY-MM-DD)
     const grouped = new Map();
@@ -550,7 +598,7 @@ async function renderPurchases(){
 }
 function wireBills(){$$('[data-bill]').forEach(b=>b.onclick=()=>billModal(+b.dataset.bill).catch(e=>notify(e.message,'bad')))}
 let savedSubmission=null;
-async function renderNew(){if(!['OWNER','PURCHASE'].includes(state.user.role)){$('#view').innerHTML='<div class="notice bad">You do not have permission to create purchase bills.</div>';return}const farmers=await api('/farmers?limit=60');state.farmers=farmers;state.lineCount=0;savedSubmission=token();const isEdit=Boolean(state.editingPurchaseId&&state.editingPurchaseData);const editData=state.editingPurchaseData;const pageTitle=isEdit?title(`સુધારો: બિલ નં. ${editData.number}`,'Amend peanut weights, bags, rate, deductions, or payment settlement.','<button id="cancel-edit-btn" class="outline-btn" style="border-color:#b45309;color:#b45309">Cancel Edit (સુધારો રદ કરો)</button>'):title('New purchase bill','Enter farmer details, peanut weights, bardana / bags, rate and deductions.');$('#view').innerHTML=pageTitle+`<form id="purchase-form" class="purchase-layout"><div class="grid"><div class="panel"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:12px"><div class="panel-subtitle" style="margin:0">01 / ખેડૂત અને આગમન વિગત (Farmer & arrival)</div><div id="next-bill-badge" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;padding:4px 12px;border-radius:20px;font-weight:700;font-size:12px">બિલ નં: —</div></div><div class="form-grid two"><label>ફેક્ટરી (Factory) *<select id="purchase-branch" required>${state.branches.map(b=>choice(b.id,b.name,String(b.id)===state.branch)).join('')}</select></label><label>બિલ તારીખ (Bill Date) *<input id="bill-date" type="date" required></label><label>ખેડૂતનું નામ (Farmer Name) *<input id="farmer-name" list="farmer-datalist" required placeholder="ખેડૂતનું નામ લખો..." autocomplete="off"><datalist id="farmer-datalist">${farmers.map(f=>`<option value="${text(f.name)}" data-id="${f.id}" data-village="${text(f.village)}" data-mobile="${text(f.mobile||'')}">${text(f.name)} (${text(f.village)})</option>`).join('')}</datalist><input type="hidden" id="selected-farmer-id" value=""></label><label>ગામ (Village) *<input id="farmer-village" required placeholder="ગામનું નામ"></label><label>મોબાઈલ નંબર (Mobile No.)<input id="farmer-mobile" type="tel" maxlength="20" placeholder="મોબાઈલ નંબર"></label><label>RST / પાવતી નંબર (Pavati no.)<input id="rst" maxlength="80" placeholder="આગમન સંદર્ભ / વજન કાંટો નં"></label><label>વાહન નંબર (Vehicle no.)<input id="vehicle" maxlength="60" placeholder="GJ-…"></label></div></div><div class="panel"><div class="panel-subtitle">02 / Peanut purchase line items (કટ્ટા / બારદાન ગણતરી)</div><div id="purchase-lines"></div><button type="button" class="secondary" id="add-line">+ Add peanut variety / lot</button><p class="help">Bag tare is deducted automatically: Net kg = Gross kg − (Bags × Tare/bag + Kapat kg). Rates are ₹ per 20 kg.</p></div><div class="panel"><div class="panel-subtitle">03 / ખર્ચ અને કપાત (Charges & deductions)</div><div class="form-grid two"><label>કાંટા ખર્ચ — Weighbridge charges (₹)<input id="charges" type="number" value="0" min="0" step="0.01"></label><label>માર્કેટ / ટ્રાન્સપોર્ટ ખર્ચ — Market transport cost (₹)<input id="transport-cost" type="number" value="0" min="0" step="0.01" placeholder="0.00"></label><label>અન્ય કપાત — Other deductions (₹)<input id="deductions" type="number" value="0" min="0" step="0.01"></label><label>રાઉન્ડ ઓફ — Round adjustment (₹)<input id="adjust" type="number" value="0" step="0.01"></label><label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:6px;grid-column:1/-1;background:#fbf8f4;padding:12px;border-radius:8px;border:1px solid #ebdccb"><input id="unload-godown" type="checkbox" style="width:20px;height:20px;cursor:pointer;margin:0"><span style="font-size:13px;font-weight:700;color:#5a3e28">ગોડાઉન ઉતરાઈ (Unload at Go-down)</span></label><label style="grid-column:1/-1">નોંધ / રિમાર્ક્સ — Notes / remarks<textarea id="notes" rows="2" maxlength="1000" placeholder="ગુણવત્તા અથવા સ્પેશિયલ નોંધ..."></textarea></label></div></div><div class="panel payment-panel"><div class="panel-subtitle">ਪੇਮੇਨ੍ਟ ਸ੆ਟਲਮੇਨ੍ਟ (04 / Payment settlement)</div><div class="form-grid two"><label>ਆਜੇ ਚੂਕਵੇਲ ਰੋਕਡ — Paid today (Cash) ₹<input id="paid-cash" type="number" value="0" min="0" step="0.01" placeholder="0.00"></label><label>ਬਾਕੀ ਰੋਕਡ — Pay later (Cash) ₹<input id="pay-later-cash" type="number" value="0" min="0" step="0.01" placeholder="0.00"></label><label>ਬਾਕੀ ਰੋਕਡ ਤਾਰੀਖ — Pay later date<input id="pay-later-date" type="date"></label></div><div class="cheque-box"><div class="cheque-box-title">ਚੇਕ ਵਿਗਤ — Cheque details</div><div class="form-grid three"><label>ਚੇਕ ਨਂਬਰ — Cheque no.<input id="cheque-num" type="text" maxlength="30" placeholder="000001"></label><label>ਚੇਕ ਤਾਰੀਖ — Cheque date<input id="cheque-date" type="date"></label><label>ਚੇਕ ਰਕਮ — Cheque amount ₹<input id="cheque-amount" type="number" value="0" min="0" step="0.01" readonly class="cheque-auto-field"></label></div><div id="cheque-helper" class="cheque-helper"></div></div></div></div><div class="panel live-slip-card" style="position:sticky;top:15px;background:#ffffff;border:2px solid #853d32;border-radius:12px;padding:16px;box-shadow:0 6px 20px rgba(0,0,0,0.06)">
+async function renderNew(){if(!['OWNER','PURCHASE'].includes(state.user.role)){$('#view').innerHTML='<div class="notice bad">You do not have permission to create purchase bills.</div>';return}const farmers=await api('/farmers?limit=60');state.farmers=farmers;state.lineCount=0;savedSubmission=token();const isEdit=Boolean(state.editingPurchaseId&&state.editingPurchaseData);const editData=state.editingPurchaseData;const pageTitle=isEdit?title(`સુધારો: બિલ નં. ${editData.number}`,'Amend peanut weights, bags, rate, deductions, or payment settlement.','<button id="cancel-edit-btn" class="outline-btn" style="border-color:#b45309;color:#b45309">Cancel Edit (સુધારો રદ કરો)</button>'):title('New purchase bill','Enter farmer details, peanut weights, bardana / bags, rate and deductions.');$('#view').innerHTML=pageTitle+`<form id="purchase-form" class="purchase-layout"><div class="grid"><div class="panel"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:12px"><div class="panel-subtitle" style="margin:0">01 / ખેડૂત અને આગમન વિગત (Farmer & arrival)</div><div id="next-bill-badge" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;padding:4px 12px;border-radius:20px;font-weight:700;font-size:12px">બિલ નં: —</div></div><div class="form-grid two"><label>ફેક્ટરી (Factory) *<select id="purchase-branch" required>${state.branches.map(b=>choice(b.id,b.name,String(b.id)===state.branch)).join('')}</select></label><label>બિલ તારીખ (Bill Date) *<input id="bill-date" type="date" required></label><label>ખેડૂતનું નામ (Farmer Name) *<input id="farmer-name" list="farmer-datalist" required placeholder="ખેડૂતનું નામ લખો..." autocomplete="off"><datalist id="farmer-datalist">${farmers.map(f=>`<option value="${text(f.name)}" data-id="${f.id}" data-village="${text(f.village)}" data-mobile="${text(f.mobile||'')}">${text(f.name)} (${text(f.village)})</option>`).join('')}</datalist><input type="hidden" id="selected-farmer-id" value=""></label><label>ગામ (Village) *<input id="farmer-village" required placeholder="ગામનું નામ"></label><label>મોબાઈલ નંબર (Mobile No.)<input id="farmer-mobile" type="tel" maxlength="20" placeholder="મોબાઈલ નંબર"></label><label>RST / પાવતી નંબર (Pavati no.)<input id="rst" maxlength="80" placeholder="આગમન સંદર્ભ / વજન કાંટો નં"></label><label>વાહન નંબર (Vehicle no.)<input id="vehicle" maxlength="60" placeholder="GJ-…"></label></div></div><div class="panel"><div class="panel-subtitle">02 / Peanut purchase line items (કટ્ટા / બારદાન ગણતરી)</div><div id="purchase-lines"></div><button type="button" class="secondary" id="add-line">+ Add peanut variety / lot</button><p class="help">Bag tare is deducted automatically: Net kg = Gross kg − (Bags × Tare/bag + Kapat kg). Rates are ₹ per 20 kg.</p></div><div class="panel"><div class="panel-subtitle">03 / ખર્ચ અને કપાત (Charges & deductions)</div><div class="form-grid two"><label>કાંટા ખર્ચ — Weighbridge charges (₹)<input id="charges" type="number" value="0" min="0" step="0.01"></label><label>માર્કેટ / ટ્રાન્સપોર્ટ ખર્ચ — Market transport cost (₹)<input id="transport-cost" type="number" value="0" min="0" step="0.01" placeholder="0.00"></label><label>અન્ય કપાત — Other deductions (₹)<input id="deductions" type="number" value="0" min="0" step="0.01"></label><label>રાઉન્ડ ઓફ — Round adjustment (₹)<input id="adjust" type="number" value="0" step="0.01"></label><label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:6px;grid-column:1/-1;background:#fbf8f4;padding:12px;border-radius:8px;border:1px solid #ebdccb"><input id="unload-godown" type="checkbox" style="width:20px;height:20px;cursor:pointer;margin:0"><span style="font-size:13px;font-weight:700;color:#5a3e28">ગોડાઉન ઉતરાઈ (Unload at Go-down)</span></label><label style="grid-column:1/-1">નોંધ / રિમાર્ક્સ — Notes / remarks<textarea id="notes" rows="2" maxlength="1000" placeholder="ગુણવત્તા અથવા સ્પેશિયલ નોંધ..."></textarea></label></div></div><div class="panel payment-panel"><div class="panel-subtitle">04 / પેમેન્ટ સેટલમેન્ટ (Payment settlement)</div><div class="form-grid two"><label>આજે ચૂકવેલ રોકડ — Paid today (Cash) ₹<input id="paid-cash" type="number" value="0" min="0" step="0.01" placeholder="0.00"></label><label>બાકી રોકડ — Pay later (Cash) ₹<input id="pay-later-cash" type="number" value="0" min="0" step="0.01" placeholder="0.00"></label><label>બાકી રોકડ તારીખ — Pay later date<input id="pay-later-date" type="date"></label></div><div class="cheque-box"><div class="cheque-box-title">ચેક વિગત — Cheque details</div><div class="form-grid three"><label>ચેક નંબર — Cheque no.<input id="cheque-num" type="text" maxlength="30" placeholder="000001"></label><label>ચેક તારીખ — Cheque date<input id="cheque-date" type="date"></label><label>ચેક રકમ — Cheque amount ₹<input id="cheque-amount" type="number" value="0" min="0" step="0.01" readonly class="cheque-auto-field"></label></div><div id="cheque-helper" class="cheque-helper"></div></div></div></div><div class="panel live-slip-card" style="position:sticky;top:15px;background:#ffffff;border:2px solid #853d32;border-radius:12px;padding:16px;box-shadow:0 6px 20px rgba(0,0,0,0.06)">
   <div class="slip-header" style="text-align:center;border-bottom:2px dashed #853d32;padding-bottom:10px;margin-bottom:12px">
     <div style="font-size:11px;font-weight:800;letter-spacing:1px;color:#853d32;text-transform:uppercase">Farmkart Foods · ખરીદી પાવતી</div>
     <div id="slip-branch-name" style="font-size:13px;font-weight:700;color:#333;margin-top:2px">Factory</div>
@@ -1085,6 +1133,9 @@ async function renderPayments(){
         <button class="secondary" id="refresh-payments-btn" style="margin-top:16px">🔄 તાજું કરો</button>
       </div>
 
+      <!-- Top KPI Summary Grid for Cheques (Video 03:19) -->
+      <div id="cheques-kpi-grid" style="display:none;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:12px;margin-bottom:16px"></div>
+
       <div id="payments-batch-notice" class="notice good" style="display:none;margin-bottom:12px"></div>
       <div id="payment-table"></div>
       <p class="help">Cash is cleared at posting. For Cheques, change status inline to CLEARED or BOUNCED, select clearance date, and click "Save All Changes" to commit all updates in a single batch.</p>
@@ -1134,6 +1185,54 @@ async function renderPayments(){
 
   function renderTable(){
     const todayISO = new Date().toISOString().split('T')[0];
+
+    // Top KPI Metrics Cards for Cheques (Video 03:19)
+    let chqTodayCount = 0, chqTodayAmt = 0;
+    let chqPendingCount = 0, chqPendingAmt = 0;
+    let chqClearedCount = 0, chqClearedAmt = 0;
+    let chqTotalCount = 0, chqTotalAmt = 0;
+
+    loadedPayments.forEach(p => {
+      const amt = Number((p.amount || '0').replace(/[^0-9.]/g, '')) || 0;
+      chqTotalCount++;
+      chqTotalAmt += amt;
+      const isToday = (p.instrument_date === todayISO) || (p.created_at && p.created_at.startsWith(todayISO));
+      if(isToday){
+        chqTodayCount++;
+        chqTodayAmt += amt;
+      }
+      if(p.status === 'PENDING'){
+        chqPendingCount++;
+        chqPendingAmt += amt;
+      } else if(p.status === 'CLEARED'){
+        chqClearedCount++;
+        chqClearedAmt += amt;
+      }
+    });
+
+    const chqKpiGrid = $('#cheques-kpi-grid');
+    if(chqKpiGrid){
+      chqKpiGrid.style.display = 'grid';
+      chqKpiGrid.innerHTML = `
+        <div class="kpi-card" style="background:#ffffff;border:1px solid #ebdccb;border-radius:10px;padding:12px 14px;box-shadow:0 2px 6px rgba(0,0,0,0.03)">
+          <div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px">આજના ચેક · TODAY'S CHEQUES</div>
+          <div style="font-size:20px;font-weight:800;color:#1e293b;margin-top:4px">${chqTodayCount} <span style="font-size:13px;font-weight:600;color:#6b7280">(${money(chqTodayAmt)})</span></div>
+        </div>
+        <div class="kpi-card" style="background:#fff5f5;border:1px solid #fecaca;border-radius:10px;padding:12px 14px;box-shadow:0 2px 6px rgba(0,0,0,0.03)">
+          <div style="font-size:11px;font-weight:700;color:#dc2626;text-transform:uppercase;letter-spacing:0.5px">બાકી ચેક · UNCLEARED CHEQUES</div>
+          <div style="font-size:20px;font-weight:800;color:#dc2626;margin-top:4px">${chqPendingCount} <span style="font-size:13px;font-weight:600">(${money(chqPendingAmt)})</span></div>
+        </div>
+        <div class="kpi-card" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 14px;box-shadow:0 2px 6px rgba(0,0,0,0.03)">
+          <div style="font-size:11px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:0.5px">ક્લિયર થયેલ · CLEARED CHEQUES</div>
+          <div style="font-size:20px;font-weight:800;color:#15803d;margin-top:4px">${chqClearedCount} <span style="font-size:13px;font-weight:600">(${money(chqClearedAmt)})</span></div>
+        </div>
+        <div class="kpi-card" style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:10px;padding:12px 14px;box-shadow:0 2px 6px rgba(0,0,0,0.03)">
+          <div style="font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px">કુલ ચેક · ALL CHEQUES TOTAL</div>
+          <div style="font-size:20px;font-weight:800;color:#1e293b;margin-top:4px">${chqTotalCount} <span style="font-size:13px;font-weight:600;color:#475569">(${money(chqTotalAmt)})</span></div>
+        </div>
+      `;
+    }
+
     $('#payment-table').innerHTML = table(
       ['Bill','Farmer','Method','Cheque / UTR #','Amount','Status','Clearance Date','Action'],
       loadedPayments.map(p => {
