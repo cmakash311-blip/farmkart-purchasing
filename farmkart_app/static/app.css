@@ -22,3 +22,20 @@
 .pay-preview-title{font-size:11px;font-weight:800;letter-spacing:1px;color:#3a6b42;text-transform:uppercase;margin-bottom:10px}
 @media(max-width:770px){.form-grid.three{grid-template-columns:1fr}.cheque-box{padding:12px}}
 
+/* ── Point 6: Bank of Baroda Cheque Leaf & Predesigned Stationery ── */
+.cheque-leaf-container{position:relative;width:202mm;height:94mm;background:#fdfcf9;border:1px dashed #c0b299;border-radius:6px;padding:8mm;font-family:"Arial",sans-serif;color:#111;overflow:hidden;box-shadow:0 4px 15px rgba(0,0,0,0.05);margin:0 auto}
+.cheque-crossing{position:absolute;top:6mm;left:6mm;border-top:2px solid #111;border-bottom:2px solid #111;padding:2px 8px;font-size:10px;font-weight:800;letter-spacing:1px;transform:rotate(-15deg)}
+.cheque-date-boxes{position:absolute;top:9mm;right:12mm;display:flex;gap:1.5mm}
+.date-box{display:inline-flex;align-items:center;justify-content:center;width:4.5mm;height:5.5mm;border:1px solid #777;font-family:monospace;font-size:12px;font-weight:700}
+.cheque-payee{position:absolute;top:26mm;left:28mm;font-size:14px;letter-spacing:0.5px}
+.cheque-words{position:absolute;top:37mm;left:28mm;width:145mm;font-size:13px;line-height:1.5;letter-spacing:0.3px}
+.cheque-amount-box{position:absolute;top:42mm;right:14mm;border:2px solid #333;padding:4px 10px;font-size:16px;font-weight:800;background:#fff}
+.cheque-signatory{position:absolute;bottom:8mm;right:14mm;text-align:right;font-size:11px;font-weight:700}
+
+@media print{
+  body.printing-cheque @page{size:202mm 94mm;margin:0}
+  body.printing-cheque .cheque-leaf-container{border:none!important;box-shadow:none!important;margin:0!important;padding:8mm!important;position:absolute!important;top:0!important;left:0!important}
+  body.printing-stationery @page{size:A4 portrait;margin:0}
+  body.printing-stationery .stationery-preview-wrap{box-shadow:none!important}
+}
+

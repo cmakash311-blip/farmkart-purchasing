@@ -655,6 +655,34 @@ async function submitBill(e){e.preventDefault();const err=$('#bill-error');err.t
   const selectedFarmerId = $('#selected-farmer-id')?.value ? Number($('#selected-farmer-id').value) : null;
   if(!farmerName || farmerName.length < 2){err.textContent='ખેડૂતનું નામ દાખલ કરો (Farmer name is required).';return}
   if(!farmerVillage || farmerVillage.length < 2){err.textContent='ગામનું નામ દાખલ કરો (Village is required).';return}if(!confirm('Post this purchase bill permanently? Verify weight, rate and farmer before continuing.'))return;const cashPaid2=$('#paid-cash')?.value||'0';const payLaterCash=$('#pay-later-cash')?.value||'0';const payLaterDate=$('#pay-later-date')?.value||null;const chequeNum=$('#cheque-num')?.value||'';const chequeDate=$('#cheque-date')?.value||null;const chequeAmt=$('#cheque-amount')?.value||'0';const body={idem_key:savedSubmission,branch_id:Number($('#purchase-branch').value),farmer_id:selectedFarmerId,farmer_name:farmerName,farmer_village:farmerVillage,farmer_mobile:farmerMobile,rst_number:$('#rst').value,vehicle_number:$('#vehicle').value,weighbridge_charges:$('#charges').value,other_deductions:$('#deductions').value,market_transport_cost:$('#transport-cost')?.value||'0',unload_at_godown:Boolean($('#unload-godown')?.checked),round_adjustment:$('#adjust').value,purchase_date:$('#bill-date')?.value||null,notes:$('#notes').value,lines:all,cash_paid:cashPaid2,pay_later_cash:payLaterCash,pay_later_date:payLaterDate,cheque_number:chequeNum,cheque_date:chequeDate,cheque_amount:chequeAmt};const btn=$('#post-bill');btn.disabled=true;btn.textContent='Posting bill…';try{const result=await api('/purchases','POST',body);notify(`Purchase bill ${result.purchase.number} saved.`);await billModal(result.purchase.id);savedSubmission=token();navigate('purchases')}catch(ex){err.textContent=ex.message+' If the connection failed, check the purchase register before retrying.'}finally{btn.disabled=false;btn.textContent='Post final purchase bill →'}}
+
+function numberToWordsINR(amount){
+  const n = Math.floor(Number(amount)||0);
+  if(n === 0) return 'Zero Rupees Only';
+  const units = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+  const tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+  function convert(num){
+    if(num < 20) return units[num];
+    if(num < 100) return tens[Math.floor(num/10)] + (num%10 ? ' ' + units[num%10] : '');
+    if(num < 1000) return units[Math.floor(num/100)] + ' Hundred' + (num%100 ? ' ' + convert(num%100) : '');
+    if(num < 100000) return convert(Math.floor(num/1000)) + ' Thousand' + (num%1000 ? ' ' + convert(num%1000) : '');
+    if(num < 10000000) return convert(Math.floor(num/100000)) + ' Lakh' + (num%100000 ? ' ' + convert(num%100000) : '');
+    return convert(Math.floor(num/10000000)) + ' Crore' + (num%10000000 ? ' ' + convert(num%10000000) : '');
+  }
+  return convert(n) + ' Rupees Only';
+}
+
+function getStationeryCalibration(){
+  try{
+    return JSON.parse(localStorage.getItem('fkf_stationery_calib')||'{"top":0,"left":0,"scale":100}');
+  }catch(e){
+    return {top:0, left:0, scale:100};
+  }
+}
+function setStationeryCalibration(cfg){
+  localStorage.setItem('fkf_stationery_calib', JSON.stringify(cfg));
+}
+
 async function billModal(id){
   const p=await api('/purchases/'+id);
   const isVoid=p.status==='VOID';
@@ -668,6 +696,8 @@ async function billModal(id){
         <div class="row" style="gap:8px">
           ${canVoid?`<button class="outline-btn" style="color:var(--bad, #dc2626);border-color:var(--bad, #dc2626)" id="void-bill-btn">Cancel / Void bill</button>`:''}
           <button class="outline-btn" style="background:#fefbf6;border-color:#b45309;color:#b45309;font-weight:700" id="print-thermal">🖨 80mm Thermal (થર્મલ)</button>
+          <button class="secondary" id="print-cheque-btn">🏦 Print Cheque (ચેક)</button>
+          <button class="secondary" id="print-stationery-btn">📄 Predesigned Copy (સ્ટેશનરી)</button>
           <button class="primary" id="print-bill">Print receipt (A4/A5)</button>
         </div>
       </div>
@@ -733,6 +763,13 @@ async function billModal(id){
     },1000);
   }
   $('#print-bill').onclick=()=>window.print();
+  $('#print-cheque-btn').onclick = () => {
+    chequeLeafModal(p);
+  };
+  $('#print-stationery-btn').onclick = () => {
+    stationeryOverlayModal(p);
+  };
+
   $('#print-thermal').onclick=()=>printThermalReceipt();
   if($('#record-payment'))$('#record-payment').onclick=()=>paymentModal(p);
   if($('#void-bill-btn'))$('#void-bill-btn').onclick=()=>voidBillModal(p.id,p.number);
@@ -963,3 +1000,137 @@ async function toggleUserStatus(userId,activate,username){
 
 async function renderAudit(){if(state.user.role!=='OWNER')throw Error('Owner access required');let a=await api('/audit');$('#view').innerHTML=title('Audit history','Recorded actions by staff members for purchase and payment changes.')+`<div class="panel">${table(['Time (UTC)','User ID','Factory ID','Action','Entity','Details'],a.map(x=>`<tr><td>${text(x.at)}</td><td>${text(x.user_id)}</td><td>${text(x.branch_id||'—')}</td><td>${text(x.action)}</td><td>${text(x.entity)} #${text(x.entity_id)}</td><td>${text(x.details)}</td></tr>`))}</div>`}
 initialize();
+
+
+function chequeLeafModal(p){
+  // Find cheque payment or cheque amount on bill
+  const chqAmt = Number(p.cheque_amount||0) || Number(p.payments_summary?.pending||0) || Number(p.payable||0);
+  const chqDate = p.cheque_date || p.date || new Date().toISOString().split('T')[0];
+  const [yr, mo, da] = chqDate.split('-');
+  const dateDigits = `${da||'01'}${mo||'01'}${yr||'2026'}`.split('');
+  const words = numberToWordsINR(chqAmt);
+
+  openModal(`
+    <div class="no-print" style="margin-bottom:14px">
+      <div class="row" style="justify-content:space-between">
+        <h3>Bank of Baroda Cheque Leaf (202 mm × 94 mm)</h3>
+        <div class="row" style="gap:8px">
+          <button class="primary" id="trigger-chq-print">🖨 Print Cheque Leaf</button>
+          <button class="secondary" id="back-to-bill">← Back to Bill</button>
+        </div>
+      </div>
+      <p class="help">Insert Bank of Baroda cheque leaf into manual bypass tray of your printer. Standard dimensions: 202 × 94 mm.</p>
+    </div>
+    <div class="cheque-leaf-container">
+      <div class="cheque-crossing">
+        <span>A/C PAYEE ONLY</span>
+      </div>
+      <div class="cheque-date-boxes">
+        ${dateDigits.map(d => `<span class="date-box">${text(d)}</span>`).join('')}
+      </div>
+      <div class="cheque-payee">
+        <strong>${text(p.farmer)}</strong>
+      </div>
+      <div class="cheque-words">
+        <strong>*** ${text(words)} ***</strong>
+      </div>
+      <div class="cheque-amount-box">
+        <strong>₹ *** ${money(chqAmt).replace('₹','')} /-</strong>
+      </div>
+      <div class="cheque-signatory">
+        <span>For Farmkart Foods</span>
+        <small style="display:block;margin-top:20px;color:#777">Authorized Signatory</small>
+      </div>
+    </div>
+  `);
+
+  $('#back-to-bill').onclick = () => billModal(p.id);
+  $('#trigger-chq-print').onclick = () => {
+    document.body.classList.add('printing-cheque');
+    window.print();
+    setTimeout(() => document.body.classList.remove('printing-cheque'), 1200);
+  };
+}
+
+function stationeryOverlayModal(p){
+  const calib = getStationeryCalibration();
+  openModal(`
+    <div class="no-print" style="margin-bottom:14px">
+      <div class="row" style="justify-content:space-between">
+        <h3>Predesigned Stationery Copy (Print on preprinted forms)</h3>
+        <div class="row" style="gap:8px">
+          <button class="primary" id="trigger-stat-print">🖨 Print on Stationary</button>
+          <button class="secondary" id="open-calib-settings">⚙️ Calibrate (mm)</button>
+          <button class="secondary" id="back-to-bill-stat">← Back to Bill</button>
+        </div>
+      </div>
+      <p class="help">This mode suppresses all borders and background text, printing only numbers and dynamic values into the exact boxes of your preprinted mandi forms.</p>
+    </div>
+    <div class="stationery-preview-wrap" style="transform:scale(${calib.scale/100});transform-origin:top left;margin-top:${calib.top}mm;margin-left:${calib.left}mm">
+      <div class="stationery-field" style="position:relative;min-height:500px;font-family:monospace;font-size:13px;line-height:1.6">
+        <div style="position:absolute;top:20mm;left:130mm;font-weight:700">${text(p.number)}</div>
+        <div style="position:absolute;top:20mm;left:175mm">${text(p.date)}</div>
+        <div style="position:absolute;top:32mm;left:40mm;font-weight:700">${text(p.farmer)}</div>
+        <div style="position:absolute;top:32mm;left:130mm">${text(p.village)}</div>
+        <div style="position:absolute;top:39mm;left:40mm">${text(p.mobile||'')}</div>
+        <div style="position:absolute;top:39mm;left:130mm">${text(p.vehicle||'')}</div>
+        <div style="position:absolute;top:55mm;left:15mm;width:170mm">
+          ${p.lines.map((l,i) => `
+            <div style="display:flex;justify-content:space-between;margin-bottom:4mm">
+              <span style="width:50mm">${text(l.variety)}</span>
+              <span style="width:25mm;text-align:right">${l.bag_count||0}</span>
+              <span style="width:30mm;text-align:right">${number(l.net_kg)}</span>
+              <span style="width:30mm;text-align:right">₹${money(l.rate_per_20kg).replace('₹','')}</span>
+              <span style="width:35mm;text-align:right;font-weight:700">₹${money(l.amount).replace('₹','')}</span>
+            </div>
+          `).join('')}
+        </div>
+        <div style="position:absolute;top:115mm;left:145mm;font-weight:700">₹ ${money(p.gross_value).replace('₹','')}</div>
+        <div style="position:absolute;top:123mm;left:145mm">− ₹ ${money(p.weighbridge_charges).replace('₹','')}</div>
+        <div style="position:absolute;top:131mm;left:145mm;font-size:16px;font-weight:800">₹ ${money(p.payable).replace('₹','')}</div>
+      </div>
+    </div>
+  `);
+
+  $('#back-to-bill-stat').onclick = () => billModal(p.id);
+  $('#open-calib-settings').onclick = () => calibrationSettingsModal(p);
+  $('#trigger-stat-print').onclick = () => {
+    document.body.classList.add('printing-stationery');
+    window.print();
+    setTimeout(() => document.body.classList.remove('printing-stationery'), 1200);
+  };
+}
+
+function calibrationSettingsModal(p){
+  const calib = getStationeryCalibration();
+  openModal(`
+    <h2>⚙️ Stationery Printer Calibration</h2>
+    <p class="muted">Adjust horizontal and vertical millimeter offsets to align perfectly with your printer feed.</p>
+    <form id="calib-form" style="display:grid;gap:14px;max-width:380px;margin-top:16px">
+      <label>Top Margin Offset (mm)
+        <input id="calib-top" type="number" step="0.5" value="${calib.top}" required>
+      </label>
+      <label>Left Margin Offset (mm)
+        <input id="calib-left" type="number" step="0.5" value="${calib.left}" required>
+      </label>
+      <label>Scale / Font Size Scaling (%)
+        <input id="calib-scale" type="number" min="70" max="130" step="1" value="${calib.scale}" required>
+      </label>
+      <div class="row" style="gap:10px;margin-top:10px">
+        <button type="submit" class="primary">Save Calibration</button>
+        <button type="button" class="secondary" id="cancel-calib">Cancel</button>
+      </div>
+    </form>
+  `);
+  $('#cancel-calib').onclick = () => stationeryOverlayModal(p);
+  $('#calib-form').onsubmit = (e) => {
+    e.preventDefault();
+    setStationeryCalibration({
+      top: Number($('#calib-top').value)||0,
+      left: Number($('#calib-left').value)||0,
+      scale: Number($('#calib-scale').value)||100
+    });
+    notify('Stationery alignment offsets saved for this browser.');
+    stationeryOverlayModal(p);
+  };
+}
