@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python -m farmkart_app.bootstrap init && uvicorn farmkart_app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: python3 -m farmkart_app.bootstrap init && python3 -m uvicorn farmkart_app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: APP_ENV
         value: production

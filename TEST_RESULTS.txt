@@ -1,0 +1,16 @@
+Farmkart Foods Online Purchasing — Pilot v0.1
+Verification date: 2026-10-28
+
+Backend automated tests (pytest): 4 passed.
+Included:
+- Authentication, CSRF protection and access to protected endpoints
+- Decimal ₹ per 20 kg purchase calculation, bill sequence and idempotent posting
+- Factory access isolation and cheque payment lifecycle
+- Rejection of impossible kapat and overpayment
+
+JavaScript syntax: node --check passed.
+Python module compilation: passed.
+Browser interface rendering: tested with a mocked browser API; main purchase form preview matched ₹1,09,980 for 1,000 kg at ₹2,200 per 20kg minus ₹20 charge.
+
+Not tested: production Windows deployment, external cloud connectivity, printer alignment, managed PostgreSQL under concurrency, actual bank/Tally integration, existing database migration and end-to-end live HTTP browser flows.
+Do not process real transactions before deployment, acceptance and security review.
