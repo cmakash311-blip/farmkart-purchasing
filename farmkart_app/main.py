@@ -151,6 +151,14 @@ class FarmerPaymentIn(BaseModel):
 class PaymentStatusIn(BaseModel):
     status:Literal['CLEARED','BOUNCED']
 
+class BatchPaymentItem(BaseModel):
+    payment_id: int
+    status: Literal['PENDING', 'CLEARED', 'BOUNCED']
+    clearance_date: date | None = None
+
+class BatchPaymentStatusIn(BaseModel):
+    items: list[BatchPaymentItem] = Field(min_length=1, max_length=200)
+
 class UserCreateIn(BaseModel):
     username: str = Field(min_length=3, max_length=50)
     name: str = Field(min_length=2, max_length=120)
@@ -555,13 +563,43 @@ def change_payment(payment_id:int,data:PaymentStatusIn,user:User=Depends(require
     db.commit()
     return {'payment':payment_view(p)}
 
+# Point 7: Batch status update for inline cheque clearing register
+@app.post('/api/payments/batch-status')
+def batch_change_payments(data:BatchPaymentStatusIn,user:User=Depends(require_user),db:Session=Depends(get_db)):
+    allow(user,'OWNER','ACCOUNTS')
+    updated=[]
+    for it in data.items:
+        p=db.scalar(select(Payment).where(Payment.id==it.payment_id).with_for_update())
+        if not p: continue
+        bill=db.get(Purchase,p.purchase_id)
+        if not bill: continue
+        if user.role!='OWNER' and bill.branch_id!=user.branch_id: continue
+        if p.status!=it.status:
+            p.status=it.status
+            if it.clearance_date:
+                p.instrument_date=it.clearance_date
+            audit(db,user,bill.branch_id,'BATCH_PAYMENT_STATUS','payment',p.id,f'status={it.status}')
+            updated.append(p.id)
+    db.commit()
+    return {'ok':True,'updated_count':len(updated),'updated_ids':updated}
+
 @app.get('/api/payments')
-def payments(branch_id:int|None=None,status:str='',user:User=Depends(require_user),db:Session=Depends(get_db)):
+def payments(branch_id:int|None=None,status:str='',month:str='',user:User=Depends(require_user),db:Session=Depends(get_db)):
     if branch_id:check_branch(user,branch_id)
-    q=select(Payment).join(Purchase,Payment.purchase_id==Purchase.id).options(selectinload(Payment.purchase).selectinload(Purchase.farmer)).order_by(Payment.id.desc()).limit(500)
+    q=select(Payment).join(Purchase,Payment.purchase_id==Purchase.id).options(selectinload(Payment.purchase).selectinload(Purchase.farmer)).order_by(Payment.id.desc()).limit(1000)
     if user.role!='OWNER':q=q.where(Purchase.branch_id==user.branch_id)
     if branch_id:q=q.where(Purchase.branch_id==branch_id)
     if status:q=q.where(Payment.status==status)
+    if month.strip():
+        # month format: YYYY-MM
+        try:
+            yr, mo = [int(x) for x in month.strip().split('-')[:2]]
+            # Filter by purchase_date or instrument_date in that month
+            start_d = date(yr, mo, 1)
+            end_d = date(yr + 1, 1, 1) if mo == 12 else date(yr, mo + 1, 1)
+            q=q.where((Purchase.purchase_date >= start_d) & (Purchase.purchase_date < end_d))
+        except Exception:
+            pass
     return [payment_view(p) for p in db.scalars(q)]
 
 @app.get('/api/dashboard')

@@ -611,6 +611,61 @@ def test_point4_bill_date_picker_and_next_sequence_preview(setup):
     next_res_after = c.get('/api/purchases/next-number?branch_id=1', headers=h).json()
     assert next_res_after['next_number'] == expected_num + 1
 
+def test_point7_batch_payment_status_update(setup):
+    """Point 7: Batch payment status update for month-wise inline clearing register."""
+    c = setup
+    # 1. Login as buyer to create farmer and bills
+    h_buy = auth(c, 'hmtbuy')
+    fid = farmer(c, h_buy)
+
+    res1 = c.post('/api/purchases', headers=h_buy, json={
+        'idem_key': uuid.uuid4().hex,
+        'branch_id': 1,
+        'farmer_id': fid,
+        'lines': [{'variety': 'Java', 'bag_count': 0, 'gross_kg': '100.000', 'rate_per_20kg': '2000.00'}], # 10,000
+        'cheque_number': 'BATCH-001',
+        'cheque_date': '2026-10-25',
+        'cheque_amount': '10000.00'
+    })
+    b1 = res1.json()['purchase']
+
+    res2 = c.post('/api/purchases', headers=h_buy, json={
+        'idem_key': uuid.uuid4().hex,
+        'branch_id': 1,
+        'farmer_id': fid,
+        'lines': [{'variety': 'Java', 'bag_count': 0, 'gross_kg': '200.000', 'rate_per_20kg': '2000.00'}], # 20,000
+        'cheque_number': 'BATCH-002',
+        'cheque_date': '2026-10-26',
+        'cheque_amount': '20000.00'
+    })
+    b2 = res2.json()['purchase']
+
+    p1 = c.get(f"/api/purchases/{b1['id']}", headers=h_buy).json()['payments'][0]
+    p2 = c.get(f"/api/purchases/{b2['id']}", headers=h_buy).json()['payments'][0]
+    assert p1['status'] == 'PENDING'
+    assert p2['status'] == 'PENDING'
+
+    # 2. Login as accountant to perform batch clearance update
+    h_acct = auth(c, 'hmtacct')
+    batch_res = c.post('/api/payments/batch-status', headers=h_acct, json={
+        'items': [
+            {'payment_id': p1['id'], 'status': 'CLEARED', 'clearance_date': '2026-10-28'},
+            {'payment_id': p2['id'], 'status': 'BOUNCED', 'clearance_date': None}
+        ]
+    })
+    assert batch_res.status_code == 200, batch_res.text
+    data = batch_res.json()
+    assert data['updated_count'] == 2
+
+    # 3. Verify updated statuses in payments endpoint with month filtering
+    month_res = c.get('/api/payments?branch_id=1&month=2026-10', headers=h_acct).json()
+    found_p1 = next(p for p in month_res if p['id'] == p1['id'])
+    found_p2 = next(p for p in month_res if p['id'] == p2['id'])
+    assert found_p1['status'] == 'CLEARED'
+    assert found_p1['instrument_date'] == '2026-10-28'
+    assert found_p2['status'] == 'BOUNCED'
+
+
 
 
 

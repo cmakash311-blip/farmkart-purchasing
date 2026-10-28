@@ -811,7 +811,192 @@ function voidBillModal(id,number){
   };
 }
 function paymentModal(bill){openModal(`<h2>Record farmer payment</h2><p class="muted">Bill <strong>${text(bill.number)}</strong> · ${text(bill.farmer)}</p><div class="callout">Unallocated payable: <strong>${money(bill.payments_summary.unallocated)}</strong>. A cheque or bank transfer will remain pending until cleared.</div><form id="payment-form"><div class="form-grid two" style="margin-top:20px"><label>Payment method<select name="method" id="pay-method">${choice('CASH','Cash')}${choice('CHEQUE','Cheque')}${choice('BANK','Bank transfer')}</select></label><label>Amount ₹<input name="amount" value="${text(bill.payments_summary.unallocated)}" type="number" min="0.01" step="0.01" max="${text(bill.payments_summary.unallocated)}" required></label><label>Cheque / bank reference<input name="reference" maxlength="100" placeholder="Cheque number or UTR"></label><label>Instrument date<input name="instrument_date" type="date"></label></div><p id="payment-error" class="error-text"></p><button class="primary" style="margin-top:15px">Record payment</button></form>`);$('#payment-form').onsubmit=async e=>{e.preventDefault();const body=Object.fromEntries(new FormData(e.target));body.idem_key=paymentToken;body.instrument_date=body.instrument_date||null;try{await api('/purchases/'+bill.id+'/payments','POST',body);notify('Payment recorded.');await billModal(bill.id)}catch(ex){$('#payment-error').textContent=ex.message}};const paymentToken=token()}
-async function renderPayments(){const payments=await api('/payments'+scope());$('#view').innerHTML=title('Cheques & payments','Review issued cheques, bank transfers, cash and clearance status.')+`<div class="panel"><div class="filters"><select id="pay-filter"><option value="">All payments</option><option value="PENDING">Pending clearance</option><option value="CLEARED">Cleared</option><option value="BOUNCED">Bounced</option></select></div><div id="payment-table"></div><p class="help">Only accounts and owner roles can record or finalize payments. Cash is cleared at entry; cheques and bank transfers need confirmation.</p></div>`;function display(){const f=$('#pay-filter').value,pp=payments.filter(p=>!f||p.status===f);$('#payment-table').innerHTML=table(['Bill','Farmer','Method','Reference','Amount','Status','Action'],pp.map(p=>`<tr><td><button class="link" data-bill="${p.purchase_id}">${text(p.bill_number)}</button></td><td>${text(p.farmer)}</td><td>${text(p.method)}</td><td>${text(p.reference||'—')}</td><td>${money(p.amount)}</td><td><span class="pill ${text(p.status.toLowerCase())}">${text(p.status)}</span></td><td>${p.status==='PENDING'&&['OWNER','ACCOUNTS'].includes(state.user.role)?`<button class="secondary" data-clear="${p.id}">Set status</button>`:'—'}</td></tr>`),'No payments yet');wireBills();$$('[data-clear]').forEach(b=>b.onclick=()=>statusModal(+b.dataset.clear))}$('#pay-filter').onchange=display;display()}
+async function renderPayments(){
+  const canEdit = ['OWNER','ACCOUNTS'].includes(state.user.role);
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  
+  $('#view').innerHTML = title(
+    'Cheques & payments register (ચેક અને ચૂકવણી રજીસ્ટર)',
+    'Month-wise inline clearing register for cheques and bank transfers with batch save.',
+    canEdit ? `<button class="primary" id="save-batch-payments-btn" style="background:#2b6e3f;border-color:#235732" disabled>💾 Save All Changes (બધા સાચવો)</button>` : ''
+  ) + `
+    <div class="panel">
+      <div class="filters" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:16px">
+        <label style="margin:0">મહિનો (Month)
+          <input type="month" id="pay-month-filter" value="${currentMonth}" style="width:170px;margin-top:4px">
+        </label>
+        <label style="margin:0">ફેક્ટરી (Factory)
+          <select id="pay-factory-filter" style="width:180px;margin-top:4px">
+            <option value="">All visible factories</option>
+            ${state.branches.map(b=>choice(b.id,b.name,String(b.id)===state.branch)).join('')}
+          </select>
+        </label>
+        <label style="margin:0">સ્થિતિ (Status)
+          <select id="pay-status-filter" style="width:170px;margin-top:4px">
+            <option value="">All statuses</option>
+            <option value="PENDING">PENDING (ક્લિયરિંગ બાકી)</option>
+            <option value="CLEARED">CLEARED (ક્લિયર થયેલ)</option>
+            <option value="BOUNCED">BOUNCED (પરત / બાઉન્સ)</option>
+          </select>
+        </label>
+        <button class="secondary" id="refresh-payments-btn" style="margin-top:16px">🔄 તાજું કરો</button>
+      </div>
+
+      <div id="payments-batch-notice" class="notice good" style="display:none;margin-bottom:12px"></div>
+      <div id="payment-table"></div>
+      <p class="help">Cash is cleared at posting. For Cheques, change status inline to CLEARED or BOUNCED, select clearance date, and click "Save All Changes" to commit all updates in a single batch.</p>
+    </div>
+  `;
+
+  let loadedPayments = [];
+  const modifiedRows = new Map(); // paymentId -> { status, clearance_date }
+
+  function markChanged(payId, newStatus, newDate){
+    modifiedRows.set(Number(payId), {
+      payment_id: Number(payId),
+      status: newStatus,
+      clearance_date: newDate || null
+    });
+    const saveBtn = $('#save-batch-payments-btn');
+    if(saveBtn){
+      saveBtn.disabled = false;
+      saveBtn.textContent = `💾 Save Changes (${modifiedRows.size}) →`;
+    }
+  }
+
+  async function loadData(){
+    const m = $('#pay-month-filter')?.value || '';
+    const b = $('#pay-factory-filter')?.value || '';
+    const st = $('#pay-status-filter')?.value || '';
+    let params = new URLSearchParams();
+    if(m) params.set('month', m);
+    if(b) params.set('branch_id', b);
+    if(st) params.set('status', st);
+
+    $('#payment-table').innerHTML = '<div class="empty">Loading payments register…</div>';
+    modifiedRows.clear();
+    const saveBtn = $('#save-batch-payments-btn');
+    if(saveBtn){
+      saveBtn.disabled = true;
+      saveBtn.textContent = '💾 Save All Changes';
+    }
+
+    try{
+      loadedPayments = await api('/payments?' + params.toString());
+      renderTable();
+    }catch(err){
+      $('#payment-table').innerHTML = `<div class="notice bad">${text(err.message)}</div>`;
+    }
+  }
+
+  function renderTable(){
+    const todayISO = new Date().toISOString().split('T')[0];
+    $('#payment-table').innerHTML = table(
+      ['Bill','Farmer','Method','Cheque / UTR #','Amount','Status','Clearance Date','Action'],
+      loadedPayments.map(p => {
+        const isPending = p.status === 'PENDING';
+        const isCash = p.method === 'CASH';
+        const stPill = `<span class="pill ${text(p.status.toLowerCase())}">${text(p.status)}</span>`;
+
+        let statusControl = stPill;
+        let dateControl = text(p.instrument_date || '—');
+
+        if(canEdit && !isCash){
+          statusControl = `
+            <select class="inline-status-sel" data-pay-id="${p.id}" style="padding:4px 8px;font-size:12px;width:125px">
+              <option value="PENDING" ${p.status==='PENDING'?'selected':''}>PENDING</option>
+              <option value="CLEARED" ${p.status==='CLEARED'?'selected':''}>CLEARED</option>
+              <option value="BOUNCED" ${p.status==='BOUNCED'?'selected':''}>BOUNCED</option>
+            </select>
+          `;
+          dateControl = `
+            <input type="date" class="inline-date-inp" data-pay-id="${p.id}" value="${p.instrument_date || todayISO}" style="padding:3px 6px;font-size:12px;width:130px">
+          `;
+        }
+
+        return `<tr>
+          <td><button class="link" data-bill="${p.purchase_id}"><strong>${text(p.bill_number)}</strong></button></td>
+          <td>${text(p.farmer)}</td>
+          <td><span class="pill ${isCash?'cleared':'pending'}">${text(p.method)}</span></td>
+          <td><code>${text(p.reference||'—')}</code></td>
+          <td><strong>${money(p.amount)}</strong></td>
+          <td>${statusControl}</td>
+          <td>${dateControl}</td>
+          <td>${canEdit && !isCash ? `<button class="outline-btn" style="padding:3px 8px;font-size:11px" data-single-save="${p.id}">Save</button>` : '—'}</td>
+        </tr>`;
+      }),
+      'No payments found for this month and filter'
+    );
+
+    wireBills();
+
+    // Wire inline inputs
+    $$('.inline-status-sel').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const pid = sel.dataset.payId;
+        const dtInp = $(`input.inline-date-inp[data-pay-id="${pid}"]`);
+        markChanged(pid, sel.value, dtInp?.value);
+      });
+    });
+
+    $$('.inline-date-inp').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const pid = inp.dataset.payId;
+        const sel = $(`select.inline-status-sel[data-pay-id="${pid}"]`);
+        markChanged(pid, sel?.value || 'CLEARED', inp.value);
+      });
+    });
+
+    $$('[data-single-save]').forEach(btn => {
+      btn.onclick = async () => {
+        const pid = btn.dataset.singleSave;
+        const sel = $(`select.inline-status-sel[data-pay-id="${pid}"]`);
+        const inp = $(`input.inline-date-inp[data-pay-id="${pid}"]`);
+        btn.disabled = true;
+        try{
+          await api('/payments/batch-status', 'POST', {
+            items: [{
+              payment_id: Number(pid),
+              status: sel.value,
+              clearance_date: inp.value || null
+            }]
+          });
+          notify(`Payment #${pid} status updated to ${sel.value}.`);
+          loadData();
+        }catch(err){
+          notify(err.message, 'bad');
+          btn.disabled = false;
+        }
+      };
+    });
+  }
+
+  $('#pay-month-filter')?.addEventListener('change', loadData);
+  $('#pay-factory-filter')?.addEventListener('change', loadData);
+  $('#pay-status-filter')?.addEventListener('change', loadData);
+  $('#refresh-payments-btn')?.addEventListener('click', loadData);
+
+  const batchBtn = $('#save-batch-payments-btn');
+  if(batchBtn){
+    batchBtn.onclick = async () => {
+      if(!modifiedRows.size) return;
+      batchBtn.disabled = true;
+      batchBtn.textContent = 'Saving…';
+      try{
+        const payload = { items: Array.from(modifiedRows.values()) };
+        const res = await api('/payments/batch-status', 'POST', payload);
+        notify(`Successfully updated ${res.updated_count} payment instrument(s).`);
+        await loadData();
+      }catch(err){
+        notify(err.message, 'bad');
+        batchBtn.disabled = false;
+      }
+    };
+  }
+
+  await loadData();
+}
 function statusModal(id){openModal(`<h2>Update payment status</h2><p class="muted">Mark this cheque or bank transfer only after checking bank evidence.</p><div class="grid"><button id="mark-cleared" class="primary">Mark cleared</button><button id="mark-bounced" class="secondary">Mark bounced / failed</button></div><p id="status-error" class="error-text"></p>`);for(const [selector,status] of [['#mark-cleared','CLEARED'],['#mark-bounced','BOUNCED']])$(selector).onclick=async()=>{if(!confirm('Confirm that the instrument status is '+status+'?'))return;try{await api('/payments/'+id+'/status','POST',{status});closeModal();notify('Payment status updated.');navigate('payments')}catch(e){$('#status-error').textContent=e.message}}}
 async function renderReports(){const d=await api('/dashboard'+scope());$('#view').innerHTML=title('Reports & exports','Download your authorized factory purchase records and reconcile accounts.')+`<div class="grid two"><div class="panel"><div class="eyebrow">PURCHASE REGISTER</div><h3>Export all purchase bills</h3><p class="muted">CSV compatible with Excel. Includes farmer name, weights, payable, cleared, pending and outstanding.</p><button id="export-btn" class="primary">↓ Download purchase CSV</button></div><div class="panel"><div class="eyebrow">CURRENT REPORT</div><h3>Purchase summary</h3><div class="detail-grid"><div><small>Total bills</small><strong>${d.all_bills}</strong></div><div><small>Net kg</small><strong>${number(d.all_kg)}</strong></div><div><small>Payable</small><strong>${money(d.total_purchase_value)}</strong></div></div></div></div><div class="callout" style="margin-top:19px">Exports are generated server-side and restricted to authorized factory data. Full accounting integration and statutory reporting require additional configuration.</div>`;$('#export-btn').onclick=()=>{window.location.href='/api/export/purchases'+scope()}}
 async function renderUsers(){
