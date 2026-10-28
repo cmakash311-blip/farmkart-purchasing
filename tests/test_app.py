@@ -368,3 +368,75 @@ def test_gunny_bag_and_bardana_calculation(setup):
     assert len(purchases_list)==1
     assert purchases_list[0]['total_bags']==80
 
+def test_farmer_khata_ledger_and_fifo_payment(setup):
+    c=setup
+    h=auth(c,'owner')
+    fid=c.post('/api/farmers',headers=h,json={'name':'Govindbhai Patel','village':'Idar','mobile':'9825123456'}).json()['id']
+    
+    # Bill 1: 50 bags, net 1000 kg, payable ₹100,000 (1000kg * 2000/20)
+    b1=c.post('/api/purchases',headers=h,json={
+        'branch_id':1,'farmer_id':fid,'idem_key':uuid.uuid4().hex,
+        'lines':[{'variety':'Java','bag_count':50,'bag_tare_kg':'0','gross_kg':'1000','kapat_kg':'0','rate_per_20kg':'2000'}]
+    }).json()['purchase']
+    
+    # Bill 2: 30 bags, net 600 kg, payable ₹60,000 (600kg * 2000/20)
+    b2=c.post('/api/purchases',headers=h,json={
+        'branch_id':2,'farmer_id':fid,'idem_key':uuid.uuid4().hex,
+        'lines':[{'variety':'Bold','bag_count':30,'bag_tare_kg':'0','gross_kg':'600','kapat_kg':'0','rate_per_20kg':'2000'}]
+    }).json()['purchase']
+    
+    # 1. Fetch initial Ledger
+    ledger=c.get(f'/api/farmers/{fid}/ledger').json()
+    assert ledger['farmer']['name']=='Govindbhai Patel'
+    s=ledger['summary']
+    assert s['total_bills']==2
+    assert s['total_bags']==80
+    assert s['total_billed']=='160000.00'
+    assert s['outstanding_balance']=='160000.00'
+    assert s['unallocated_balance']=='160000.00'
+    assert len(ledger['entries'])==2
+    assert ledger['entries'][0]['credit']=='100000.00'
+    assert ledger['entries'][0]['running_balance']=='100000.00'
+    assert ledger['entries'][1]['credit']=='60000.00'
+    assert ledger['entries'][1]['running_balance']=='160000.00'
+    assert ledger['closing_balance']=='160000.00'
+    
+    # 2. Overpayment validation (> 160000)
+    overpay=c.post(f'/api/farmers/{fid}/payments',headers=h,json={
+        'idem_key':uuid.uuid4().hex,'method':'CASH','amount':'160001'
+    })
+    assert overpay.status_code==422
+    assert 'exceeds total unallocated' in overpay.json()['detail']
+    
+    # 3. FIFO lump-sum payment of ₹120,000
+    # Expected: clears Bill 1 (₹100,000) and allocates ₹20,000 to Bill 2
+    pay_res=c.post(f'/api/farmers/{fid}/payments',headers=h,json={
+        'idem_key':uuid.uuid4().hex,'method':'CASH','amount':'120000','reference':'Cash payment batch 1'
+    })
+    assert pay_res.status_code==201, pay_res.text
+    alloc=pay_res.json()['allocations']
+    assert len(alloc)==2
+    assert alloc[0]['bill']==b1['number']
+    assert alloc[0]['amount']=='100000.00'
+    assert alloc[1]['bill']==b2['number']
+    assert alloc[1]['amount']=='20000.00'
+    
+    # 4. Check updated Ledger
+    ledger_after=c.get(f'/api/farmers/{fid}/ledger').json()
+    s2=ledger_after['summary']
+    assert s2['total_cleared_payments']=='120000.00'
+    assert s2['outstanding_balance']=='40000.00'
+    assert s2['unallocated_balance']=='40000.00'
+    assert ledger_after['closing_balance']=='40000.00'
+    assert len(ledger_after['entries'])==4
+    
+    # 5. Check individual bill outstanding balances
+    detail1=c.get(f"/api/purchases/{b1['id']}").json()
+    assert detail1['payments_summary']['outstanding']=='0.00'
+    assert detail1['payments_summary']['unallocated']=='0.00'
+    
+    detail2=c.get(f"/api/purchases/{b2['id']}").json()
+    assert detail2['payments_summary']['outstanding']=='40000.00'
+    assert detail2['payments_summary']['unallocated']=='40000.00'
+
+

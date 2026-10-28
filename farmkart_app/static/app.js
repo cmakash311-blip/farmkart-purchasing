@@ -24,10 +24,25 @@ function table(headers,rows,empty='No records found'){return `<div class="table-
 async function renderDashboard(){let [d,all]=await Promise.all([api('/dashboard'+scope()),api('/purchases'+scope())]);$('#view').innerHTML=title('Purchasing overview','Live purchasing visibility across your authorized factories.',`<button class="primary" id="quick-new">+ New purchase</button>`)+`<div class="grid four"><div class="stat"><div class="kicker">Today’s purchases <span class="emoji">▤</span></div><div class="number">${d.today_bills}</div><div class="foot">Bills posted today</div></div><div class="stat"><div class="kicker">Today’s quantity <span class="emoji">♧</span></div><div class="number">${number(d.today_kg)} <small>kg</small></div><div class="foot">Net peanut weight</div></div><div class="stat"><div class="kicker">Today’s purchase value <span class="emoji">₹</span></div><div class="number">${money(d.today_value)}</div><div class="foot">After charges and adjustments</div></div><div class="stat"><div class="kicker">Outstanding payments <span class="emoji">◷</span></div><div class="number">${money(d.outstanding)}</div><div class="foot">Includes pending cheques / bank transfers</div></div></div><div class="grid two" style="margin-top:21px"><div class="panel"><h3>All-time purchasing</h3><div class="detail-grid"><div><small>Total bills</small><strong>${d.all_bills}</strong></div><div><small>Total net weight</small><strong>${number(d.all_kg)} kg</strong></div><div><small>Total payable</small><strong>${money(d.total_purchase_value)}</strong></div></div></div><div class="panel"><h3>Payment instruments</h3><div class="stat" style="border:0;box-shadow:none;padding:0"><div class="kicker">Cheque / bank transfer pending clearance</div><div class="number">${money(d.pending_instruments)}</div></div></div></div><div class="panel" style="margin-top:20px"><div class="row" style="justify-content:space-between"><h3>Recent purchase bills</h3><button class="secondary" id="all-purchases">View all →</button></div>${table(['Bill','Factory','Farmer','Date','Net kg','Payable'],all.slice(0,8).map(p=>`<tr><td><button class="link" data-bill="${p.id}">${text(p.number)}</button></td><td>${text(p.branch)}</td><td>${text(p.farmer)}</td><td>${text(p.date)}</td><td>${number(p.net_kg)}</td><td>${money(p.payable)}</td></tr>`),'No purchase bills yet')}</div>`;$('#quick-new').onclick=()=>navigate('new');$('#all-purchases').onclick=()=>navigate('purchases');wireBills()}
 async function renderFarmers(){
   const canCreate=['OWNER','PURCHASE'].includes(state.user.role);
-  $('#view').innerHTML=title('Farmer directory','One farmer directory shared between Himatnagar and Modasa.',canCreate?'<button class="primary" id="add-farmer">+ Register farmer</button>':'')+`<div class="panel"><div class="filters"><input id="farmer-search" placeholder="Search farmer / village / mobile"></div><p class="help">Showing up to 100 matching farmers. Search by name, village or mobile to find older records.</p><div id="farmers-table"></div></div>`;
+  $('#view').innerHTML=title('Farmer directory & Khata','One farmer directory shared between Himatnagar and Modasa with running account ledgers.',canCreate?'<button class="primary" id="add-farmer">+ Register farmer</button>':'')+`<div class="panel"><div class="filters"><input id="farmer-search" placeholder="Search farmer / village / mobile"></div><p class="help">Showing up to 100 matching farmers. Click "Khata / ખાતાવહી" on any farmer to view their complete statement, bills, and payments.</p><div id="farmers-table"></div></div>`;
   let current=0,timer;
   async function lookup(){let serial=++current;const q=$('#farmer-search').value.trim();const rows=await api('/farmers?limit=100&search='+encodeURIComponent(q));if(serial!==current)return;
-    $('#farmers-table').innerHTML=table(['Farmer ID','Farmer name','Village','Mobile','Cooperative'],rows.map(f=>`<tr><td>${text(f.code)}</td><td><strong>${text(f.name)}</strong></td><td>${text(f.village)}</td><td>${text(f.mobile||'—')}</td><td>${text(f.cooperative||'—')}</td></tr>`),'No matching farmers')}
+    $('#farmers-table').innerHTML=table(
+      ['Farmer ID','Farmer name','Village','Mobile','Cooperative','Ledger / ખાતાવહી'],
+      rows.map(f=>`<tr>
+        <td>${text(f.code)}</td>
+        <td><strong>${text(f.name)}</strong></td>
+        <td>${text(f.village)}</td>
+        <td>${text(f.mobile||'—')}</td>
+        <td>${text(f.cooperative||'—')}</td>
+        <td><button class="secondary" data-farmer-khata="${f.id}">Khata / ખાતાવહી →</button></td>
+      </tr>`),
+      'No matching farmers'
+    );
+    $$('[data-farmer-khata]').forEach(btn=>{
+      btn.onclick=()=>farmerKhataModal(+btn.dataset.farmerKhata).catch(e=>notify(e.message,'bad'));
+    });
+  }
   $('#farmer-search').oninput=()=>{clearTimeout(timer);timer=setTimeout(()=>lookup().catch(e=>notify(e.message,'bad')),250)};
   if($('#add-farmer'))$('#add-farmer').onclick=farmerModal;
   await lookup();
@@ -36,6 +51,188 @@ function openModal(html){$('#modal-content').innerHTML=html;$('#modal').hidden=f
 function closeModal(){$('#modal').hidden=true;$('#modal-content').innerHTML=''}
 $('#modal-close').onclick=closeModal;$('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()});
 function farmerModal(done){openModal(`<h2>Register farmer</h2><p class="muted">This profile can be used at either factory.</p><form id="farmer-form" class="grid"><div class="form-grid two"><label>Farmer full name *<input name="name" required minlength="2" maxlength="140"></label><label>Village *<input name="village" required minlength="2" maxlength="140"></label><label>Mobile<input name="mobile" maxlength="20" inputmode="tel"></label><label>Cooperative (optional)<input name="cooperative" maxlength="140"></label></div><div id="farmer-modal-error" class="error-text"></div><button class="primary">Save farmer</button></form>`);$('#farmer-form').onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button');b.disabled=true;try{const fd=Object.fromEntries(new FormData(e.target));const farmer=await api('/farmers','POST',fd);closeModal();notify('Farmer registered successfully.');if(typeof done==='function')await done(farmer);else navigate('farmers')}catch(err){$('#farmer-modal-error').textContent=err.message}finally{b.disabled=false}}}
+async function farmerKhataModal(farmerId, dateFrom='', dateTo=''){
+  let params=new URLSearchParams();
+  if(dateFrom)params.set('date_from',dateFrom);
+  if(dateTo)params.set('date_to',dateTo);
+  const data=await api(`/farmers/${farmerId}/ledger?`+params.toString());
+  const f=data.farmer,s=data.summary;
+  const canPay=['OWNER','ACCOUNTS'].includes(state.user.role)&&Number(s.unallocated_balance)>0;
+  const entriesHtml=data.entries.length?data.entries.map(e=>{
+    const isBill=e.type==='BILL';
+    return `<tr>
+      <td>${text(e.date)}</td>
+      <td><strong>${isBill?`<button class="link" data-bill-ref="${text(e.ref)}">${text(e.ref)}</button>`:text(e.ref)}</strong></td>
+      <td>${text(e.branch)}</td>
+      <td>${text(e.description)}</td>
+      <td style="color:#16a34a;font-weight:600">${Number(e.credit)>0?'+ '+money(e.credit):'—'}</td>
+      <td style="color:#dc2626;font-weight:600">${Number(e.debit)>0?'− '+money(e.debit):'—'}</td>
+      <td><span class="pill ${e.status==='CLEARED'?'cleared':e.status==='PENDING'?'pending':'bounced'}">${text(e.status)}</span></td>
+      <td><strong>${money(e.running_balance)}</strong></td>
+    </tr>`;
+  }).join(''):`<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">No transactions recorded in this period.</td></tr>`;
+
+  openModal(`
+    <div class="no-print">
+      <div class="row" style="justify-content:space-between;padding-right:24px;margin-bottom:18px">
+        <div>
+          <span class="eyebrow">${text(f.code)} · FARMER KHATA</span>
+          <h2 style="margin:2px 0">${text(f.name)}</h2>
+          <small class="muted">${text(f.village)}${f.mobile?' · Mobile: '+text(f.mobile):''}${f.cooperative?' · Coop: '+text(f.cooperative):''}</small>
+        </div>
+        <div class="row" style="gap:8px">
+          ${canPay?`<button class="primary" id="khata-pay-btn" style="background:#15803d;border-color:#15803d">+ Pay farmer (FIFO)</button>`:''}
+          <button class="outline-btn" id="khata-print-btn">Print statement</button>
+        </div>
+      </div>
+      <div class="grid four" style="margin-bottom:20px">
+        <div class="stat" style="padding:14px">
+          <div class="kicker">Total bills</div>
+          <div class="number" style="font-size:22px;margin-top:6px">${s.total_bills}</div>
+          <div class="foot">${number(s.total_net_kg)} kg (${s.total_bags} bags)</div>
+        </div>
+        <div class="stat" style="padding:14px">
+          <div class="kicker">Total billed</div>
+          <div class="number" style="font-size:22px;margin-top:6px">${money(s.total_billed)}</div>
+          <div class="foot">Gross payable</div>
+        </div>
+        <div class="stat" style="padding:14px">
+          <div class="kicker">Total paid</div>
+          <div class="number" style="font-size:22px;margin-top:6px;color:#16a34a">${money(s.total_cleared_payments)}</div>
+          <div class="foot">Cleared payments</div>
+        </div>
+        <div class="stat" style="padding:14px;background:#fef2f2;border-color:#fecaca">
+          <div class="kicker" style="color:#991b1b">Outstanding balance</div>
+          <div class="number" style="font-size:22px;margin-top:6px;color:#dc2626">${money(s.outstanding_balance)}</div>
+          <div class="foot" style="color:#b91c1c">Pending clearance: ${money(s.total_pending_payments)}</div>
+        </div>
+      </div>
+      <div class="panel" style="padding:14px;margin-bottom:16px;background:#fbf9f6">
+        <div class="row" style="flex-wrap:wrap;gap:10px;align-items:flex-end">
+          <label style="font-size:11px">From date
+            <input type="date" id="khata-date-from" value="${data.date_from}">
+          </label>
+          <label style="font-size:11px">To date
+            <input type="date" id="khata-date-to" value="${data.date_to}">
+          </label>
+          <button class="secondary" id="khata-filter-btn" style="padding:8px 14px">Filter dates</button>
+          <button class="outline-btn" id="khata-reset-btn" style="padding:8px 14px">All history</button>
+        </div>
+      </div>
+    </div>
+    <div class="receipt" style="max-width:100%;padding:10px 0">
+      <div class="receipt-header">
+        <h2>Farmkart Foods</h2>
+        <p>FARMER ACCOUNT KHATA STATEMENT · ખેડૂત ખાતાવહી</p>
+        <p><strong>${text(f.name)}</strong> · ${text(f.village)} · ${text(f.code)}</p>
+      </div>
+      <div style="margin:14px 0;display:flex;justify-content:space-between;font-size:12px">
+        <div>Statement Period: <strong>${data.date_from||'Beginning'} to ${data.date_to||'Today'}</strong></div>
+        <div>Opening Balance: <strong>${money(data.opening_balance)}</strong></div>
+        <div>Current Net Balance: <strong style="color:#dc2626">${money(data.closing_balance)}</strong></div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th><th>Ref / Bill</th><th>Factory</th><th>Particulars</th><th>Credit (+ જમા)</th><th>Debit (− ચૂકવણી)</th><th>Status</th><th>Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.date_from?`<tr style="background:#fdfcf9;font-style:italic"><td>${text(data.date_from)}</td><td>—</td><td>—</td><td>Opening balance brought forward</td><td>—</td><td>—</td><td>—</td><td><strong>${money(data.opening_balance)}</strong></td></tr>`:''}
+          ${entriesHtml}
+        </tbody>
+        <tfoot>
+          <tr style="background:#f8f6f2;font-weight:bold">
+            <td colspan="4">Closing Balance</td>
+            <td style="color:#16a34a">+ ${money(s.total_billed)}</td>
+            <td style="color:#dc2626">− ${money(s.total_cleared_payments)}</td>
+            <td>—</td>
+            <td style="font-size:15px;color:#dc2626">${money(data.closing_balance)}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <div class="receipt-foot">
+        <small>Farmer Signature</small>
+        <small>Farmkart Foods Accounts Signatory</small>
+      </div>
+    </div>
+  `);
+  $('#khata-print-btn').onclick=()=>window.print();
+  $('#khata-filter-btn').onclick=()=>{
+    const dFrom=$('#khata-date-from').value,dTo=$('#khata-date-to').value;
+    farmerKhataModal(farmerId,dFrom,dTo);
+  };
+  $('#khata-reset-btn').onclick=()=>farmerKhataModal(farmerId);
+  if($('#khata-pay-btn'))$('#khata-pay-btn').onclick=()=>farmerPaymentModal(data);
+  $$('[data-bill-ref]').forEach(btn=>{
+    btn.onclick=async()=>{
+      const ref=btn.dataset.billRef;
+      const b=await api('/purchases?search='+encodeURIComponent(ref));
+      if(b.length)billModal(b[0].id);
+    };
+  });
+}
+function farmerPaymentModal(data){
+  const f=data.farmer,s=data.summary;
+  openModal(`
+    <h2>Record farmer payment (FIFO allocation)</h2>
+    <p class="muted">Payments are automatically distributed across the oldest unpaid purchase bills for <strong>${text(f.name)}</strong>.</p>
+    <div class="panel" style="margin-bottom:16px;background:#fefbf8">
+      <div class="row" style="justify-content:space-between">
+        <div>Available Unallocated Balance:</div>
+        <strong style="font-size:17px;color:#dc2626">${money(s.unallocated_balance)}</strong>
+      </div>
+    </div>
+    <form id="farmer-pay-form" class="grid">
+      <div class="form-grid two">
+        <label>Payment Method *
+          <select name="method" required>
+            <option value="CASH">CASH (રોકડ - auto-cleared)</option>
+            <option value="BANK">BANK TRANSFER / NEFT (બેંક ટ્રાન્સફર)</option>
+            <option value="CHEQUE">CHEQUE (ચેક)</option>
+          </select>
+        </label>
+        <label>Amount (₹) *
+          <input name="amount" type="number" step="0.01" min="0.01" max="${Number(s.unallocated_balance)}" value="${Number(s.unallocated_balance)}" required>
+        </label>
+        <label>Instrument Date
+          <input name="instrument_date" type="date">
+        </label>
+        <label>Reference / Cheque / UTR #
+          <input name="reference" maxlength="100" placeholder="e.g. UTR-987654 or Chq 123456">
+        </label>
+      </div>
+      <div id="farmer-pay-error" class="error-text"></div>
+      <div class="row" style="justify-content:flex-end;gap:10px;margin-top:10px">
+        <button type="button" class="outline-btn" id="cancel-farmer-pay">Cancel</button>
+        <button type="submit" class="primary" id="submit-farmer-pay">Confirm & allocate payment →</button>
+      </div>
+    </form>
+  `);
+  $('#cancel-farmer-pay').onclick=()=>farmerKhataModal(f.id);
+  $('#farmer-pay-form').onsubmit=async e=>{
+    e.preventDefault();
+    const btn=$('#submit-farmer-pay'),err=$('#farmer-pay-error');
+    err.textContent='';
+    btn.disabled=true;
+    try{
+      const fd=new FormData(e.target);
+      const payload={
+        idem_key:token(),
+        method:fd.get('method'),
+        amount:fd.get('amount'),
+        reference:fd.get('reference')||'',
+        instrument_date:fd.get('instrument_date')||null
+      };
+      const res=await api(`/farmers/${f.id}/payments`,'POST',payload);
+      notify(`Paid ${money(res.total_paid)} allocated across ${res.allocations.length} bill(s).`);
+      await farmerKhataModal(f.id);
+    }catch(ex){
+      err.textContent=ex.message;
+      btn.disabled=false;
+    }
+  };
+}
 async function renderPurchases(){
   $('#view').innerHTML=title('Purchase register','Every posted bill has its own permanent factory-specific number.','<button id="new-from-reg" class="primary">+ New purchase</button>')+
     `<div class="panel">

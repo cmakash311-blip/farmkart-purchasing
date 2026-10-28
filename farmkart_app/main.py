@@ -123,6 +123,13 @@ class PaymentIn(BaseModel):
     reference:str=Field(default='',max_length=100)
     instrument_date:date|None=None
 
+class FarmerPaymentIn(BaseModel):
+    idem_key: str = Field(min_length=16, max_length=100)
+    method: Literal['CASH', 'CHEQUE', 'BANK']
+    amount: Decimal = Field(gt=0, le=1000000000)
+    reference: str = Field(default='', max_length=100)
+    instrument_date: date | None = None
+
 class PaymentStatusIn(BaseModel):
     status:Literal['CLEARED','BOUNCED']
 
@@ -198,6 +205,106 @@ def add_farmer(data:FarmerIn,user:User=Depends(require_user),db:Session=Depends(
     db.add(f);db.flush();audit(db,user,user.branch_id,'CREATE_FARMER','farmer',f.id)
     db.commit()
     return {'id':f.id,'code':f'FKF-{f.id:07d}','name':f.name,'village':f.village}
+
+@app.get('/api/farmers/{farmer_id}/ledger')
+def farmer_ledger(farmer_id:int,date_from:date|None=None,date_to:date|None=None,user:User=Depends(require_user),db:Session=Depends(get_db)):
+    farmer=db.get(Farmer,farmer_id)
+    if not farmer:
+        raise HTTPException(404,'Farmer not found')
+    q=select(Purchase).options(selectinload(Purchase.branch),selectinload(Purchase.payments)).where(Purchase.farmer_id==farmer_id,Purchase.status!='VOID')
+    if user.role!='OWNER':
+        q=q.where(Purchase.branch_id==user.branch_id)
+    bills=list(db.scalars(q.order_by(Purchase.purchase_date.asc(),Purchase.id.asc())))
+    raw_entries=[]
+    for b in bills:
+        total_bags=getattr(b,'total_bags',0) or 0
+        raw_entries.append({
+            'date':b.purchase_date,'type':'BILL','id':b.id,'ref':b.number,'branch':b.branch.name,
+            'description':f"Purchase {total_bags} bags ({kg(b.net_kg)} kg net)",
+            'credit':d(b.payable),'debit':Decimal('0.00'),'status':b.status
+        })
+        for p in b.payments:
+            if p.status!='BOUNCED':
+                pay_date=p.instrument_date or p.created_at.date()
+                raw_entries.append({
+                    'date':pay_date,'type':'PAYMENT','id':p.id,'ref':p.reference or f"Payment for {b.number}",'branch':b.branch.name,
+                    'description':f"Payment via {p.method} ({p.status})",
+                    'credit':Decimal('0.00'),'debit':d(p.amount),'status':p.status
+                })
+    raw_entries.sort(key=lambda x:(x['date'],0 if x['type']=='BILL' else 1,x['id']))
+    opening_balance=Decimal('0.00')
+    if date_from:
+        for e in raw_entries:
+            if e['date']<date_from:
+                if e['type']=='BILL':opening_balance+=e['credit']
+                elif e['status']=='CLEARED':opening_balance-=e['debit']
+    filtered=[e for e in raw_entries if (not date_from or e['date']>=date_from) and (not date_to or e['date']<=date_to)]
+    running=opening_balance
+    formatted_entries=[]
+    for e in filtered:
+        if e['type']=='BILL':running+=e['credit']
+        elif e['status']=='CLEARED':running-=e['debit']
+        formatted_entries.append({
+            'date':str(e['date']),'type':e['type'],'ref':e['ref'],'branch':e['branch'],
+            'description':e['description'],'credit':inr(e['credit']),'debit':inr(e['debit']),
+            'status':e['status'],'running_balance':inr(running)
+        })
+    total_billed=sum((d(b.payable) for b in bills),Decimal('0'))
+    total_cleared=sum((d(p.amount) for b in bills for p in b.payments if p.status=='CLEARED'),Decimal('0'))
+    total_pending=sum((d(p.amount) for b in bills for p in b.payments if p.status=='PENDING'),Decimal('0'))
+    return {
+        'farmer':{'id':farmer.id,'code':f'FKF-{farmer.id:07d}','name':farmer.name,'village':farmer.village,'mobile':farmer.mobile,'cooperative':farmer.cooperative},
+        'summary':{
+            'total_bills':len(bills),
+            'total_bags':sum(getattr(b,'total_bags',0) or 0 for b in bills),
+            'total_gross_kg':kg(sum(b.gross_kg for b in bills) if bills else Decimal('0')),
+            'total_net_kg':kg(sum(b.net_kg for b in bills) if bills else Decimal('0')),
+            'total_billed':inr(total_billed),
+            'total_cleared_payments':inr(total_cleared),
+            'total_pending_payments':inr(total_pending),
+            'outstanding_balance':inr(max(Decimal('0'),total_billed-total_cleared)),
+            'unallocated_balance':inr(max(Decimal('0'),total_billed-total_cleared-total_pending)),
+        },
+        'date_from':str(date_from or ''),'date_to':str(date_to or ''),
+        'opening_balance':inr(opening_balance),'closing_balance':inr(running),'entries':formatted_entries
+    }
+
+@app.post('/api/farmers/{farmer_id}/payments',status_code=201)
+def add_farmer_payment(farmer_id:int,data:FarmerPaymentIn,user:User=Depends(require_user),db:Session=Depends(get_db)):
+    allow(user,'OWNER','ACCOUNTS')
+    farmer=db.get(Farmer,farmer_id)
+    if not farmer:raise HTTPException(404,'Farmer not found')
+    q=select(Purchase).options(selectinload(Purchase.payments),selectinload(Purchase.branch)).where(Purchase.farmer_id==farmer_id,Purchase.status!='VOID')
+    if user.role!='OWNER':
+        q=q.where(Purchase.branch_id==user.branch_id)
+    bills=list(db.scalars(q.order_by(Purchase.purchase_date.asc(),Purchase.id.asc()).with_for_update()))
+    payable_bills=[]
+    total_available=Decimal('0')
+    for b in bills:
+        allocated=sum((d(p.amount) for p in b.payments if p.status in ('CLEARED','PENDING')),Decimal('0'))
+        unpaid=max(Decimal('0'),d(b.payable)-allocated)
+        if unpaid>Decimal('0'):
+            payable_bills.append((b,unpaid))
+            total_available+=unpaid
+    rem=d(data.amount)
+    if rem>total_available:
+        raise HTTPException(422,f'Payment amount (₹{inr(rem)}) exceeds total unallocated farmer balance (₹{inr(total_available)})')
+    created_payments=[]
+    for b,unpaid in payable_bills:
+        if rem<=Decimal('0'):break
+        alloc=min(rem,unpaid)
+        rem-=alloc
+        sub_idem=f"{data.idem_key}-{b.id}"
+        existing=db.scalar(select(Payment).where(Payment.idem_key==sub_idem))
+        if existing:continue
+        status='CLEARED' if data.method=='CASH' else 'PENDING'
+        pay=Payment(idem_key=sub_idem,purchase_id=b.id,created_by=user.id,method=data.method,status=status,amount=alloc,reference=data.reference.strip() or f"Farmer payment allocation for {b.number}",instrument_date=data.instrument_date)
+        db.add(pay)
+        created_payments.append({'bill':b.number,'amount':inr(alloc),'status':status})
+    db.flush()
+    audit(db,user,user.branch_id,'FARMER_FIFO_PAYMENT','farmer',farmer.id,f"Allocated ₹{inr(data.amount)} across {len(created_payments)} bills")
+    db.commit()
+    return {'ok':True,'farmer_id':farmer.id,'farmer_name':farmer.name,'total_paid':inr(data.amount),'allocations':created_payments}
 
 @app.post('/api/purchases',status_code=201)
 def add_purchase(data:PurchaseIn,user:User=Depends(require_user),db:Session=Depends(get_db)):
