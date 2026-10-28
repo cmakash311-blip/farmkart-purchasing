@@ -1289,11 +1289,46 @@ async function renderPayments(){
       `;
     }
 
-    $('#payment-table').innerHTML = table(
-      ['Bill','Farmer','Method','Cheque / UTR #','Amount','Status','Clearance Date','Action'],
-      loadedPayments.map(p => {
+    if(!loadedPayments.length){
+      $('#payment-table').innerHTML = '<div class="empty">No payments found for this filter. Try clearing filters.</div>';
+      return;
+    }
+
+    // Group payments by month (YYYY-MM) matching video frame 025
+    const monthGroups = new Map();
+    for(const p of loadedPayments){
+      const dt = p.instrument_date || (p.created_at ? p.created_at.split('T')[0] : '');
+      const mKey = dt && dt.length >= 7 ? dt.substring(0, 7) : 'Other';
+      if(!monthGroups.has(mKey)) monthGroups.set(mKey, []);
+      monthGroups.get(mKey).push(p);
+    }
+
+    const sortedMonthKeys = Array.from(monthGroups.keys()).sort().reverse();
+    let monthAccordionHtml = '';
+    let isFirstMonth = true;
+
+    for(const mKey of sortedMonthKeys){
+      const mPayments = monthGroups.get(mKey);
+      let mTotal = 0, mCleared = 0, mPending = 0;
+      mPayments.forEach(p => {
+        const amt = Number((p.amount || '0').replace(/[^0-9.]/g, '')) || 0;
+        mTotal += amt;
+        if(p.status === 'CLEARED') mCleared += amt;
+        else if(p.status === 'PENDING') mPending += amt;
+      });
+
+      // Format month title nicely (e.g. October 2026)
+      let mTitle = mKey;
+      if(mKey.includes('-')){
+        const [yr, mo] = mKey.split('-');
+        const dateObj = new Date(Number(yr), Number(mo)-1, 1);
+        mTitle = dateObj.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+      }
+
+      const rowsHtml = mPayments.map(p => {
         const isPending = p.status === 'PENDING';
         const isCash = p.method === 'CASH';
+        const rowBg = isPending ? 'background:#fef2f2;' : (p.status==='CLEARED'?'background:#f0fdf4;':'');
         const stPill = `<span class="pill ${text(p.status.toLowerCase())}">${text(p.status)}</span>`;
 
         let statusControl = stPill;
@@ -1312,7 +1347,7 @@ async function renderPayments(){
           `;
         }
 
-        return `<tr>
+        return `<tr style="${rowBg}">
           <td><button class="link" data-bill="${p.purchase_id}"><strong>${text(p.bill_number)}</strong></button></td>
           <td>${text(p.farmer)}</td>
           <td><span class="pill ${isCash?'cleared':'pending'}">${text(p.method)}</span></td>
@@ -1322,9 +1357,56 @@ async function renderPayments(){
           <td>${dateControl}</td>
           <td>${canEdit && !isCash ? `<button class="outline-btn" style="padding:3px 8px;font-size:11px" data-single-save="${p.id}">Save</button>` : '—'}</td>
         </tr>`;
-      }),
-      'No payments found for this month and filter'
-    );
+      }).join('');
+
+      monthAccordionHtml += `
+        <div class="month-card" style="margin-bottom:14px;border:1px solid #e5ddd3;border-radius:10px;overflow:hidden;background:#fff">
+          <div class="month-card-head" data-toggle-month="${text(mKey)}" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#fcfaf7;cursor:pointer;user-select:none;border-bottom:1px solid #ede5dc">
+            <div class="row" style="gap:10px;align-items:center">
+              <span class="month-chevron" style="font-weight:700;color:#853d32;transform:rotate(${isFirstMonth?'90deg':'0deg'});transition:.2s">▶</span>
+              <strong style="font-size:15px;color:#332a24">📅 ${text(mTitle)}</strong>
+              <span style="font-size:12px;color:var(--muted)">(${mPayments.length} cheques)</span>
+            </div>
+            <div class="row" style="gap:14px;font-size:12px">
+              <span>Total: <strong>${money(mTotal)}</strong></span>
+              <span style="color:#15803d">Cleared: <strong>${money(mCleared)}</strong></span>
+              <span style="color:#dc2626">Pending: <strong>${money(mPending)}</strong></span>
+            </div>
+          </div>
+          <div class="month-card-body" id="mbody-${CSS.escape(mKey)}" style="display:${isFirstMonth?'block':'none'}">
+            <div style="overflow-x:auto">
+              <table style="width:100%;margin:0;border:none">
+                <thead>
+                  <tr style="background:#f8f5f0;font-size:11px">
+                    <th>Bill</th><th>Farmer</th><th>Method</th><th>Cheque / UTR #</th><th>Amount</th><th>Status</th><th>Clearance Date</th><th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rowsHtml}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      `;
+      isFirstMonth = false;
+    }
+
+    $('#payment-table').innerHTML = monthAccordionHtml;
+
+    // Wire month accordion toggle clicks
+    $$('[data-toggle-month]').forEach(head => {
+      head.onclick = () => {
+        const mKey = head.dataset.toggleMonth;
+        const b = $(`#mbody-${CSS.escape(mKey)}`);
+        const chevron = head.querySelector('.month-chevron');
+        if(b){
+          const open = b.style.display !== 'none';
+          b.style.display = open ? 'none' : 'block';
+          if(chevron) chevron.style.transform = open ? 'rotate(0deg)' : 'rotate(90deg)';
+        }
+      };
+    });
 
     wireBills();
 
