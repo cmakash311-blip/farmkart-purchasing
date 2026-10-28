@@ -779,3 +779,60 @@ def test_pending_cheques_count_endpoint(setup):
     # 3. Verify count incremented
     new_cnt = c.get('/api/payments/pending-count?branch_id=1', headers=h_buy).json()['pending_count']
     assert new_cnt == init_cnt + 1
+
+
+def test_multiple_cheques_settlement(setup):
+    c = setup
+    h_buy = auth(c, 'hmtbuy')
+    fid = farmer(c, h_buy)
+
+    # 1. Create a bill with dual cheques via cheques array
+    res = c.post('/api/purchases', headers=h_buy, json={
+        'idem_key': uuid.uuid4().hex,
+        'branch_id': 1,
+        'farmer_id': fid,
+        'rst_number': 'RST-MULTI-1',
+        'lines': [{'variety': 'Java', 'bag_count': 10, 'bag_tare_kg': '1.000', 'gross_kg': '510.000', 'kapat_kg': '0.000', 'rate_per_20kg': '2000.00'}],
+        # Net = 500 kg -> Payable = 500/20 * 2000 - 20 (weighbridge) = 49,980
+        'weighbridge_charges': '20.00',
+        'cash_paid': '10000.00',
+        'cheques': [
+            {'cheque_number': 'MULTI-CHQ-A', 'cheque_date': '2026-10-27', 'cheque_amount': '15000.00'},
+            {'cheque_number': 'MULTI-CHQ-B', 'cheque_date': '2026-11-05', 'cheque_amount': '24980.00'}
+        ]
+    })
+    assert res.status_code == 201, res.text
+    b = res.json()['purchase']
+    assert b['payable'] == '49980.00'
+    assert b['cash_paid'] == '10000.00'
+    assert b['cheque_amount'] == '39980.00'
+    assert len(b['cheques']) == 2
+    assert b['cheques'][0]['number'] == 'MULTI-CHQ-A'
+    assert b['cheques'][0]['amount'] == '15000.00'
+    assert b['cheques'][1]['number'] == 'MULTI-CHQ-B'
+    assert b['cheques'][1]['amount'] == '24980.00'
+
+    # Check database payment records
+    detail = c.get(f"/api/purchases/{b['id']}", headers=h_buy).json()
+    chq_payments = [p for p in detail['payments'] if p['method'] == 'CHEQUE']
+    assert len(chq_payments) == 2
+    assert any(p['reference'] == 'MULTI-CHQ-A' and p['amount'] == '15000.00' for p in chq_payments)
+    assert any(p['reference'] == 'MULTI-CHQ-B' and p['amount'] == '24980.00' for p in chq_payments)
+
+    # 2. Edit bill and update cheques
+    edit_res = c.put(f"/api/purchases/{b['id']}", headers=h_buy, json={
+        'farmer_id': fid,
+        'lines': [{'variety': 'Java', 'bag_count': 10, 'bag_tare_kg': '1.000', 'gross_kg': '510.000', 'kapat_kg': '0.000', 'rate_per_20kg': '2000.00'}],
+        'weighbridge_charges': '20.00',
+        'cash_paid': '10000.00',
+        'cheques': [
+            {'cheque_number': 'MULTI-CHQ-A', 'cheque_date': '2026-10-27', 'cheque_amount': '20000.00'},
+            {'cheque_number': 'MULTI-CHQ-B', 'cheque_date': '2026-11-05', 'cheque_amount': '19980.00'}
+        ]
+    })
+    assert edit_res.status_code == 200, edit_res.text
+    edited_detail = c.get(f"/api/purchases/{b['id']}", headers=h_buy).json()
+    edited_chqs = [p for p in edited_detail['payments'] if p['method'] == 'CHEQUE']
+    assert len(edited_chqs) == 2
+    assert any(p['reference'] == 'MULTI-CHQ-A' and p['amount'] == '20000.00' for p in edited_chqs)
+    assert any(p['reference'] == 'MULTI-CHQ-B' and p['amount'] == '19980.00' for p in edited_chqs)

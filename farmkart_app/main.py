@@ -75,8 +75,10 @@ def pay_summary(bill: Purchase):
 
 def purchase_view(p:Purchase,detail=False):
     # Point 1: Get cheque details from Payment records for receipt display
-    cheque_pay=next((x for x in p.payments if x.method=='CHEQUE'),None)
-    data={'id':p.id,'number':p.number,'date':str(p.purchase_date),'branch_id':p.branch_id,'branch':p.branch.name,'farmer_id':p.farmer_id,'farmer':p.farmer.name,'village':p.farmer.village,'mobile':p.farmer.mobile,'rst':p.rst_number,'vehicle':p.vehicle_number,'total_bags':getattr(p,'total_bags',0) or 0,'gross_kg':kg(p.gross_kg),'kapat_kg':kg(p.kapat_kg),'net_kg':kg(p.net_kg),'gross_value':inr(p.gross_value),'weighbridge_charges':inr(p.weighbridge_charges),'other_deductions':inr(p.other_deductions),'market_transport_cost':inr(getattr(p,'market_transport_cost',Decimal('0')) or Decimal('0')),'unload_at_godown':bool(getattr(p,'unload_at_godown',False)),'round_adjustment':inr(p.round_adjustment),'payable':inr(p.payable),'status':p.status,'notes':p.notes,'payments_summary':pay_summary(p),'cash_paid':inr(getattr(p,'cash_paid',Decimal('0')) or Decimal('0')),'pay_later_cash':inr(getattr(p,'pay_later_cash',Decimal('0')) or Decimal('0')),'pay_later_date':str(getattr(p,'pay_later_date',None) or ''),'cheque_number':cheque_pay.reference if cheque_pay else '','cheque_date':str(cheque_pay.instrument_date or '') if cheque_pay else '','cheque_amount':inr(cheque_pay.amount) if cheque_pay else inr(Decimal('0'))}
+    cheque_pays=[x for x in p.payments if x.method=='CHEQUE']
+    total_cheque_sum=sum((d(x.amount) for x in cheque_pays), Decimal('0'))
+    cheque_pay=cheque_pays[0] if cheque_pays else None
+    data={'id':p.id,'number':p.number,'date':str(p.purchase_date),'branch_id':p.branch_id,'branch':p.branch.name,'farmer_id':p.farmer_id,'farmer':p.farmer.name,'village':p.farmer.village,'mobile':p.farmer.mobile,'rst':p.rst_number,'vehicle':p.vehicle_number,'total_bags':getattr(p,'total_bags',0) or 0,'gross_kg':kg(p.gross_kg),'kapat_kg':kg(p.kapat_kg),'net_kg':kg(p.net_kg),'gross_value':inr(p.gross_value),'weighbridge_charges':inr(p.weighbridge_charges),'other_deductions':inr(p.other_deductions),'market_transport_cost':inr(getattr(p,'market_transport_cost',Decimal('0')) or Decimal('0')),'unload_at_godown':bool(getattr(p,'unload_at_godown',False)),'round_adjustment':inr(p.round_adjustment),'payable':inr(p.payable),'status':p.status,'notes':p.notes,'payments_summary':pay_summary(p),'cash_paid':inr(getattr(p,'cash_paid',Decimal('0')) or Decimal('0')),'pay_later_cash':inr(getattr(p,'pay_later_cash',Decimal('0')) or Decimal('0')),'pay_later_date':str(getattr(p,'pay_later_date',None) or ''),'cheque_number':cheque_pay.reference if cheque_pay else '','cheque_date':str(cheque_pay.instrument_date or '') if cheque_pay else '','cheque_amount':inr(total_cheque_sum),'cheques':[{'number':x.reference,'date':str(x.instrument_date or ''),'amount':inr(x.amount)} for x in cheque_pays]}
     if detail:
         data['lines']=[{'variety':x.variety,'bag_count':getattr(x,'bag_count',0) or 0,'bag_tare_kg':kg(getattr(x,'bag_tare_kg',0) or 0),'gross_kg':kg(x.gross_kg),'kapat_kg':kg(x.kapat_kg),'net_kg':kg(x.net_kg),'rate_per_20kg':inr(x.rate_per_20kg),'amount':inr(x.line_amount)} for x in p.lines]
         data['payments']=[payment_view(x,p.number,p.farmer.name,p.branch_id) for x in p.payments]
@@ -97,6 +99,11 @@ class FarmerIn(BaseModel):
     village:str=Field(min_length=2,max_length=140)
     mobile:str=Field(default='',max_length=20)
     cooperative:str=Field(default='',max_length=140)
+
+class ChequeIn(BaseModel):
+    cheque_number: str = Field(min_length=1, max_length=30)
+    cheque_date: date | None = None
+    cheque_amount: Decimal = Field(gt=0, le=1000000000)
 
 class LineIn(BaseModel):
     variety:str=Field(min_length=2,max_length=80)
@@ -133,6 +140,7 @@ class PurchaseIn(BaseModel):
     cheque_number:str=Field(default='',max_length=30)
     cheque_date:date|None=None
     cheque_amount:Decimal=Field(default=Decimal('0'),ge=0,le=1000000000)
+    cheques:list[ChequeIn]=Field(default_factory=list)
 
 class PurchaseUpdateIn(BaseModel):
     branch_id: int | None = None
@@ -156,6 +164,7 @@ class PurchaseUpdateIn(BaseModel):
     cheque_number: str = Field(default='', max_length=30)
     cheque_date: date | None = None
     cheque_amount: Decimal = Field(default=Decimal('0'), ge=0, le=1000000000)
+    cheques: list[ChequeIn] = Field(default_factory=list)
 
 class PaymentIn(BaseModel):
     idem_key:str=Field(min_length=16,max_length=100)
@@ -450,13 +459,22 @@ def add_purchase(data:PurchaseIn,user:User=Depends(require_user),db:Session=Depe
         for variety,bc,bt,g,k,n,r,a in computed:
             bill.lines.append(PurchaseLine(variety=variety,bag_count=bc,bag_tare_kg=bt,gross_kg=g,kapat_kg=k,net_kg=n,rate_per_20kg=r,line_amount=a))
         db.add(bill);db.flush()
-        # Point 1: Auto-create payment records from bill-time settlement
-        cash_paid=d(data.cash_paid)
-        cheque_amt=d(data.cheque_amount)
-        total_settlement=cash_paid+cheque_amt
-        if total_settlement>payable:
-            raise HTTPException(422,f'Cash + cheque settlement (₹{inr(total_settlement)}) exceeds farmer payable (₹{inr(payable)})')
-        if cash_paid>Decimal('0'):
+        # Point 1 & 5: Auto-create payment records from bill-time settlement (single or multiple cheques)
+        cheque_items = list(data.cheques) if data.cheques else []
+        if not cheque_items and d(data.cheque_amount) > Decimal('0') and data.cheque_number.strip():
+            cheque_items.append(ChequeIn(
+                cheque_number=data.cheque_number.strip(),
+                cheque_date=data.cheque_date,
+                cheque_amount=data.cheque_amount
+            ))
+
+        cash_paid = d(data.cash_paid)
+        total_cheques_amt = sum((d(c.cheque_amount) for c in cheque_items), Decimal('0'))
+        total_settlement = cash_paid + total_cheques_amt
+        if total_settlement > payable:
+            raise HTTPException(422, f'Cash + cheque settlement (₹{inr(total_settlement)}) exceeds farmer payable (₹{inr(payable)})')
+
+        if cash_paid > Decimal('0'):
             db.add(Payment(
                 idem_key=f'{data.idem_key}-cash',
                 purchase_id=bill.id,
@@ -467,17 +485,19 @@ def add_purchase(data:PurchaseIn,user:User=Depends(require_user),db:Session=Depe
                 reference='Cash paid on purchase',
                 instrument_date=None
             ))
-        if cheque_amt>Decimal('0') and data.cheque_number.strip():
-            db.add(Payment(
-                idem_key=f'{data.idem_key}-cheq',
-                purchase_id=bill.id,
-                created_by=user.id,
-                method='CHEQUE',
-                status='PENDING',
-                amount=cheque_amt,
-                reference=data.cheque_number.strip(),
-                instrument_date=data.cheque_date
-            ))
+        for idx, chq in enumerate(cheque_items, 1):
+            chq_amt = d(chq.cheque_amount)
+            if chq_amt > Decimal('0') and chq.cheque_number.strip():
+                db.add(Payment(
+                    idem_key=f'{data.idem_key}-cheq-{idx}',
+                    purchase_id=bill.id,
+                    created_by=user.id,
+                    method='CHEQUE',
+                    status='PENDING',
+                    amount=chq_amt,
+                    reference=chq.cheque_number.strip(),
+                    instrument_date=chq.cheque_date
+                ))
         audit(db,user,branch.id,'POST_PURCHASE','purchase',bill.id,number)
         db.commit()
         loaded=db.scalar(select(Purchase).options(selectinload(Purchase.lines),selectinload(Purchase.payments),selectinload(Purchase.branch),selectinload(Purchase.farmer)).where(Purchase.id==bill.id))
@@ -654,10 +674,18 @@ def edit_purchase(purchase_id: int, data: PurchaseUpdateIn, user: User = Depends
             gross_kg=g, kapat_kg=k, net_kg=n, rate_per_20kg=r, line_amount=a
         ))
 
-    # Payment settlement update
+    # Payment settlement update (single or multiple cheques)
+    cheque_items = list(data.cheques) if data.cheques else []
+    if not cheque_items and d(data.cheque_amount) > Decimal('0') and data.cheque_number.strip():
+        cheque_items.append(ChequeIn(
+            cheque_number=data.cheque_number.strip(),
+            cheque_date=data.cheque_date,
+            cheque_amount=data.cheque_amount
+        ))
+
     cash_paid = d(data.cash_paid)
-    cheque_amt = d(data.cheque_amount)
-    total_settlement = cash_paid + cheque_amt
+    total_cheques_amt = sum((d(c.cheque_amount) for c in cheque_items), Decimal('0'))
+    total_settlement = cash_paid + total_cheques_amt
     if total_settlement > payable:
         raise HTTPException(422, f'Cash + cheque settlement (₹{inr(total_settlement)}) exceeds farmer payable (₹{inr(payable)})')
 
@@ -666,7 +694,7 @@ def edit_purchase(purchase_id: int, data: PurchaseUpdateIn, user: User = Depends
         if cash_payment:
             cash_payment.amount = cash_paid
         else:
-            db.add(Payment(
+            new_cash = Payment(
                 idem_key=f'{bill.idem_key}-cash',
                 purchase_id=bill.id,
                 created_by=user.id,
@@ -675,29 +703,37 @@ def edit_purchase(purchase_id: int, data: PurchaseUpdateIn, user: User = Depends
                 amount=cash_paid,
                 reference='Cash paid on purchase (amended)',
                 instrument_date=None
-            ))
+            )
+            bill.payments.append(new_cash)
+            db.add(new_cash)
     elif cash_payment:
+        if cash_payment in bill.payments:
+            bill.payments.remove(cash_payment)
         db.delete(cash_payment)
 
-    cheq_payment = next((p for p in bill.payments if p.idem_key == f'{bill.idem_key}-cheq' or p.method == 'CHEQUE'), None)
-    if cheque_amt > Decimal('0') and data.cheque_number.strip():
-        if cheq_payment:
-            cheq_payment.amount = cheque_amt
-            cheq_payment.reference = data.cheque_number.strip()
-            cheq_payment.instrument_date = data.cheque_date
-        else:
-            db.add(Payment(
-                idem_key=f'{bill.idem_key}-cheq',
+    # Delete old initial cheque payments from both relationship and database
+    for p in list(bill.payments):
+        if p.method == 'CHEQUE' and (p.idem_key.startswith(f'{bill.idem_key}-cheq') or p.idem_key == f'{bill.idem_key}-cheq'):
+            if p in bill.payments:
+                bill.payments.remove(p)
+            db.delete(p)
+    db.flush()
+
+    for idx, chq in enumerate(cheque_items, 1):
+        amt = d(chq.cheque_amount)
+        if amt > Decimal('0') and chq.cheque_number.strip():
+            new_cheq = Payment(
+                idem_key=f'{bill.idem_key}-cheq-{idx}-{uuid.uuid4().hex[:6]}',
                 purchase_id=bill.id,
                 created_by=user.id,
                 method='CHEQUE',
                 status='PENDING',
-                amount=cheque_amt,
-                reference=data.cheque_number.strip(),
-                instrument_date=data.cheque_date
-            ))
-    elif cheq_payment and cheq_payment.status == 'PENDING':
-        db.delete(cheq_payment)
+                amount=amt,
+                reference=chq.cheque_number.strip(),
+                instrument_date=chq.cheque_date
+            )
+            bill.payments.append(new_cheq)
+            db.add(new_cheq)
 
     audit(db, user, bill.branch_id, 'EDIT_PURCHASE', 'purchase', bill.id, f'Amended bill {bill.number}')
     db.commit()
