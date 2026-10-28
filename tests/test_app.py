@@ -532,5 +532,46 @@ def test_point1_point2_direct_farmer_and_dual_payment_settlement(setup):
     bill2 = res2.json()['purchase']
     assert bill2['farmer_id'] == found['id'] # Reused same farmer
 
+def test_point3_market_transport_and_godown_unloading(setup):
+    """Point 3: Market transport cost deduction and unload at godown flag."""
+    c = setup
+    h = auth(c, 'hmtbuy')
+    fid = farmer(c, h)
+    
+    # Bill with Market transport cost ₹350 and Unload at Godown = True
+    # Gross: 1000kg at 2000/20kg = ₹100,000
+    # Weighbridge: ₹50, Market Transport: ₹350
+    # Payable = 100,000 - 50 - 350 = ₹99,600
+    res = c.post('/api/purchases', headers=h, json={
+        'idem_key': uuid.uuid4().hex,
+        'branch_id': 1,
+        'farmer_id': fid,
+        'rst_number': 'RST-TRAN-01',
+        'weighbridge_charges': '50.00',
+        'market_transport_cost': '350.00',
+        'unload_at_godown': True,
+        'other_deductions': '0.00',
+        'round_adjustment': '0.00',
+        'lines': [{
+            'variety': 'Bold',
+            'bag_count': 0,
+            'bag_tare_kg': '0.000',
+            'gross_kg': '1000.000',
+            'kapat_kg': '0.000',
+            'rate_per_20kg': '2000.00'
+        }]
+    })
+    assert res.status_code == 201, res.text
+    p = res.json()['purchase']
+    assert p['payable'] == '99600.00'
+    assert p['market_transport_cost'] == '350.00'
+    assert p['unload_at_godown'] is True
+    
+    # Check detail endpoint returns both fields
+    detail = c.get(f"/api/purchases/{p['id']}", headers=h).json()
+    assert detail['market_transport_cost'] == '350.00'
+    assert detail['unload_at_godown'] is True
+
+
 
 

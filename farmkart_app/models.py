@@ -76,6 +76,9 @@ class Purchase(Base):
     cash_paid: Mapped[Decimal] = mapped_column(Numeric(15,2), default=Decimal('0'))
     pay_later_cash: Mapped[Decimal] = mapped_column(Numeric(15,2), default=Decimal('0'))
     pay_later_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Point 3: Transport & Godown unloading costs
+    market_transport_cost: Mapped[Decimal] = mapped_column(Numeric(15,2), default=Decimal('0'))
+    unload_at_godown: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     farmer: Mapped[Farmer] = relationship()
     branch: Mapped[Branch] = relationship()

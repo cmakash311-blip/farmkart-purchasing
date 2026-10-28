@@ -35,6 +35,13 @@ def migrate_db():
             if 'pay_later_date' not in cols:
                 conn.execute(text("ALTER TABLE purchases ADD COLUMN pay_later_date DATE"))
                 conn.commit()
+            # Point 3 Migration: Transport and Godown unloading costs
+            if 'market_transport_cost' not in cols:
+                conn.execute(text("ALTER TABLE purchases ADD COLUMN market_transport_cost NUMERIC(15,2) DEFAULT 0"))
+                conn.commit()
+            if 'unload_at_godown' not in cols:
+                conn.execute(text("ALTER TABLE purchases ADD COLUMN unload_at_godown BOOLEAN DEFAULT FALSE"))
+                conn.commit()
 
 def initialize():
     Base.metadata.create_all(engine)

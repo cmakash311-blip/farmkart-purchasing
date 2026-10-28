@@ -76,7 +76,7 @@ def pay_summary(bill: Purchase):
 def purchase_view(p:Purchase,detail=False):
     # Point 1: Get cheque details from Payment records for receipt display
     cheque_pay=next((x for x in p.payments if x.method=='CHEQUE'),None)
-    data={'id':p.id,'number':p.number,'date':str(p.purchase_date),'branch_id':p.branch_id,'branch':p.branch.name,'farmer_id':p.farmer_id,'farmer':p.farmer.name,'village':p.farmer.village,'mobile':p.farmer.mobile,'rst':p.rst_number,'vehicle':p.vehicle_number,'total_bags':getattr(p,'total_bags',0) or 0,'gross_kg':kg(p.gross_kg),'kapat_kg':kg(p.kapat_kg),'net_kg':kg(p.net_kg),'gross_value':inr(p.gross_value),'weighbridge_charges':inr(p.weighbridge_charges),'other_deductions':inr(p.other_deductions),'round_adjustment':inr(p.round_adjustment),'payable':inr(p.payable),'status':p.status,'notes':p.notes,'payments_summary':pay_summary(p),'cash_paid':inr(getattr(p,'cash_paid',Decimal('0')) or Decimal('0')),'pay_later_cash':inr(getattr(p,'pay_later_cash',Decimal('0')) or Decimal('0')),'pay_later_date':str(getattr(p,'pay_later_date',None) or ''),'cheque_number':cheque_pay.reference if cheque_pay else '','cheque_date':str(cheque_pay.instrument_date or '') if cheque_pay else '','cheque_amount':inr(cheque_pay.amount) if cheque_pay else inr(Decimal('0'))}
+    data={'id':p.id,'number':p.number,'date':str(p.purchase_date),'branch_id':p.branch_id,'branch':p.branch.name,'farmer_id':p.farmer_id,'farmer':p.farmer.name,'village':p.farmer.village,'mobile':p.farmer.mobile,'rst':p.rst_number,'vehicle':p.vehicle_number,'total_bags':getattr(p,'total_bags',0) or 0,'gross_kg':kg(p.gross_kg),'kapat_kg':kg(p.kapat_kg),'net_kg':kg(p.net_kg),'gross_value':inr(p.gross_value),'weighbridge_charges':inr(p.weighbridge_charges),'other_deductions':inr(p.other_deductions),'market_transport_cost':inr(getattr(p,'market_transport_cost',Decimal('0')) or Decimal('0')),'unload_at_godown':bool(getattr(p,'unload_at_godown',False)),'round_adjustment':inr(p.round_adjustment),'payable':inr(p.payable),'status':p.status,'notes':p.notes,'payments_summary':pay_summary(p),'cash_paid':inr(getattr(p,'cash_paid',Decimal('0')) or Decimal('0')),'pay_later_cash':inr(getattr(p,'pay_later_cash',Decimal('0')) or Decimal('0')),'pay_later_date':str(getattr(p,'pay_later_date',None) or ''),'cheque_number':cheque_pay.reference if cheque_pay else '','cheque_date':str(cheque_pay.instrument_date or '') if cheque_pay else '','cheque_amount':inr(cheque_pay.amount) if cheque_pay else inr(Decimal('0'))}
     if detail:
         data['lines']=[{'variety':x.variety,'bag_count':getattr(x,'bag_count',0) or 0,'bag_tare_kg':kg(getattr(x,'bag_tare_kg',0) or 0),'gross_kg':kg(x.gross_kg),'kapat_kg':kg(x.kapat_kg),'net_kg':kg(x.net_kg),'rate_per_20kg':inr(x.rate_per_20kg),'amount':inr(x.line_amount)} for x in p.lines]
         data['payments']=[payment_view(x,p.number,p.farmer.name,p.branch_id) for x in p.payments]
@@ -118,6 +118,9 @@ class PurchaseIn(BaseModel):
     vehicle_number:str=Field(default='',max_length=60)
     weighbridge_charges:Decimal=Field(default=Decimal('0'),ge=0,le=10000000)
     other_deductions:Decimal=Field(default=Decimal('0'),ge=0,le=10000000)
+    # Point 3: Transport & Godown unloading costs
+    market_transport_cost:Decimal=Field(default=Decimal('0'),ge=0,le=10000000)
+    unload_at_godown:bool=Field(default=False)
     round_adjustment:Decimal=Field(default=Decimal('0'),ge=-10000000,le=10000000)
     notes:str=Field(default='',max_length=1000)
     lines:list[LineIn]=Field(min_length=1,max_length=25)
@@ -396,7 +399,8 @@ def add_purchase(data:PurchaseIn,user:User=Depends(require_user),db:Session=Depe
     net=sum((x[5] for x in computed),Decimal('0'))
     gross_value=sum((x[7] for x in computed),Decimal('0'))
     weigh=d(data.weighbridge_charges);other=d(data.other_deductions);adjust=d(data.round_adjustment)
-    payable=gross_value-weigh-other+adjust
+    transport=d(data.market_transport_cost)
+    payable=gross_value-weigh-other-transport+adjust
     if payable<0 or payable>MAX:raise HTTPException(422,'Invalid final payable')
     # Serialize bill numbering per branch in PostgreSQL (row-level lock).
     # SQLite is for local development only, and is not multi-factory safe.
@@ -408,7 +412,7 @@ def add_purchase(data:PurchaseIn,user:User=Depends(require_user),db:Session=Depe
             seq=BillSequence(branch_id=branch.id,fy=fyear,last_number=0);db.add(seq);db.flush()
         seq.last_number+=1
         number=f'{branch.code}/{fyear}/{seq.last_number:06d}'
-        bill=Purchase(number=number,idem_key=data.idem_key,branch_id=branch.id,farmer_id=target_farmer_id,created_by=user.id,purchase_date=today(),rst_number=data.rst_number.strip(),vehicle_number=data.vehicle_number.strip(),total_bags=total_bags,gross_kg=gross,kapat_kg=kapat,net_kg=net,gross_value=gross_value,weighbridge_charges=weigh,other_deductions=other,round_adjustment=adjust,payable=payable,notes=data.notes.strip(),status='POSTED',cash_paid=d(data.cash_paid),pay_later_cash=d(data.pay_later_cash),pay_later_date=data.pay_later_date)
+        bill=Purchase(number=number,idem_key=data.idem_key,branch_id=branch.id,farmer_id=target_farmer_id,created_by=user.id,purchase_date=today(),rst_number=data.rst_number.strip(),vehicle_number=data.vehicle_number.strip(),total_bags=total_bags,gross_kg=gross,kapat_kg=kapat,net_kg=net,gross_value=gross_value,weighbridge_charges=weigh,other_deductions=other,round_adjustment=adjust,payable=payable,notes=data.notes.strip(),status='POSTED',cash_paid=d(data.cash_paid),pay_later_cash=d(data.pay_later_cash),pay_later_date=data.pay_later_date,market_transport_cost=transport,unload_at_godown=bool(data.unload_at_godown))
         for variety,bc,bt,g,k,n,r,a in computed:
             bill.lines.append(PurchaseLine(variety=variety,bag_count=bc,bag_tare_kg=bt,gross_kg=g,kapat_kg=k,net_kg=n,rate_per_20kg=r,line_amount=a))
         db.add(bill);db.flush()
