@@ -670,3 +670,88 @@ def test_point7_batch_payment_status_update(setup):
 
 
 
+
+
+def test_feature3_edit_purchase_bill(setup):
+    c = setup
+    h_buy = auth(c, 'hmtbuy')
+    fid = farmer(c, h_buy)
+
+    # 1. Create a bill
+    res = c.post('/api/purchases', headers=h_buy, json={
+        'idem_key': uuid.uuid4().hex,
+        'branch_id': 1,
+        'farmer_id': fid,
+        'rst_number': 'RST-INITIAL',
+        'lines': [{'variety': 'Java', 'bag_count': 10, 'bag_tare_kg': '1.000', 'gross_kg': '510.000', 'kapat_kg': '0.000', 'rate_per_20kg': '2000.00'}],
+        'weighbridge_charges': '20.00',
+        'market_transport_cost': '0.00',
+        'round_adjustment': '0.00',
+        'cash_paid': '10000.00',
+        'cheque_number': 'CHQ-ORIG',
+        'cheque_date': '2026-10-27',
+        'cheque_amount': '39980.00'
+    })
+    assert res.status_code == 201
+    b = res.json()['purchase']
+    bill_id = b['id']
+    assert b['payable'] == '49980.00'
+    assert b['cash_paid'] == '10000.00'
+    assert b['cheque_amount'] == '39980.00'
+
+    # 2. Operator amends the bill ("સુધારો")
+    edit_res = c.put(f'/api/purchases/{bill_id}', headers=h_buy, json={
+        'farmer_id': fid,
+        'rst_number': 'RST-AMENDED-99',
+        'vehicle_number': 'GJ-09-AB-1234',
+        'lines': [{'variety': 'Bold', 'bag_count': 20, 'bag_tare_kg': '1.000', 'gross_kg': '1020.000', 'kapat_kg': '0.000', 'rate_per_20kg': '2200.00'}],
+        'weighbridge_charges': '20.00',
+        'market_transport_cost': '100.00',
+        'unload_at_godown': True,
+        'round_adjustment': '0.00',
+        'cash_paid': '20000.00',
+        'pay_later_cash': '10000.00',
+        'pay_later_date': '2026-11-05',
+        'cheque_number': 'CHQ-AMENDED-01',
+        'cheque_date': '2026-10-29',
+        'cheque_amount': '79880.00'
+    })
+    assert edit_res.status_code == 200, edit_res.text
+    edited = edit_res.json()['purchase']
+    assert edited['rst'] == 'RST-AMENDED-99'
+    assert edited['vehicle'] == 'GJ-09-AB-1234'
+    assert edited['total_bags'] == 20
+    assert edited['net_kg'] == '1000.000'
+    assert edited['payable'] == '109880.00'
+    assert edited['market_transport_cost'] == '100.00'
+    assert edited['unload_at_godown'] is True
+    assert edited['cash_paid'] == '20000.00'
+    assert edited['pay_later_cash'] == '10000.00'
+    assert edited['cheque_number'] == 'CHQ-AMENDED-01'
+    assert edited['cheque_amount'] == '79880.00'
+
+    # Check payment records are synchronized
+    detail = c.get(f'/api/purchases/{bill_id}', headers=h_buy).json()
+    payments = detail['payments']
+    cash_p = next(p for p in payments if p['method'] == 'CASH')
+    cheq_p = next(p for p in payments if p['method'] == 'CHEQUE')
+    assert cash_p['amount'] == '20000.00'
+    assert cheq_p['amount'] == '79880.00'
+    assert cheq_p['reference'] == 'CHQ-AMENDED-01'
+
+    # 3. Create another bill without cash, void it, and verify cannot edit a voided bill
+    res_voidable = c.post('/api/purchases', headers=h_buy, json={
+        'idem_key': uuid.uuid4().hex,
+        'branch_id': 1,
+        'farmer_id': fid,
+        'lines': [{'variety': 'Java', 'bag_count': 5, 'bag_tare_kg': '1.000', 'gross_kg': '205.000', 'kapat_kg': '0.000', 'rate_per_20kg': '2000.00'}]
+    })
+    voidable_id = res_voidable.json()['purchase']['id']
+    c.post(f'/api/purchases/{voidable_id}/void', headers=h_buy, json={'reason': 'Incorrect vehicle ticket entered'})
+
+    attempt_edit_void = c.put(f'/api/purchases/{voidable_id}', headers=h_buy, json={
+        'farmer_id': fid,
+        'lines': [{'variety': 'Java', 'bag_count': 5, 'bag_tare_kg': '1.000', 'gross_kg': '205.000', 'kapat_kg': '0.000', 'rate_per_20kg': '2000.00'}]
+    })
+    assert attempt_edit_void.status_code == 400
+    assert 'voided' in attempt_edit_void.text.lower()

@@ -134,6 +134,29 @@ class PurchaseIn(BaseModel):
     cheque_date:date|None=None
     cheque_amount:Decimal=Field(default=Decimal('0'),ge=0,le=1000000000)
 
+class PurchaseUpdateIn(BaseModel):
+    branch_id: int | None = None
+    farmer_id: int | None = None
+    farmer_name: str | None = Field(default=None, max_length=140)
+    farmer_village: str | None = Field(default=None, max_length=140)
+    farmer_mobile: str | None = Field(default=None, max_length=20)
+    rst_number: str = Field(default='', max_length=80)
+    vehicle_number: str = Field(default='', max_length=60)
+    purchase_date: date | None = None
+    weighbridge_charges: Decimal = Field(default=Decimal('0'), ge=0, le=10000000)
+    other_deductions: Decimal = Field(default=Decimal('0'), ge=0, le=10000000)
+    market_transport_cost: Decimal = Field(default=Decimal('0'), ge=0, le=10000000)
+    unload_at_godown: bool = Field(default=False)
+    round_adjustment: Decimal = Field(default=Decimal('0'), ge=-10000000, le=10000000)
+    notes: str = Field(default='', max_length=1000)
+    lines: list[LineIn] = Field(min_length=1, max_length=25)
+    cash_paid: Decimal = Field(default=Decimal('0'), ge=0, le=1000000000)
+    pay_later_cash: Decimal = Field(default=Decimal('0'), ge=0, le=1000000000)
+    pay_later_date: date | None = None
+    cheque_number: str = Field(default='', max_length=30)
+    cheque_date: date | None = None
+    cheque_amount: Decimal = Field(default=Decimal('0'), ge=0, le=1000000000)
+
 class PaymentIn(BaseModel):
     idem_key:str=Field(min_length=16,max_length=100)
     method:Literal['CASH','CHEQUE','BANK']
@@ -528,6 +551,163 @@ def void_purchase(purchase_id:int,data:PurchaseVoidIn,user:User=Depends(require_
     audit(db,user,p.branch_id,'VOID_PURCHASE','purchase',p.id,f"{p.number}: {clean_reason}")
     db.commit()
     return purchase_view(p,True)
+
+@app.put('/api/purchases/{purchase_id}')
+def edit_purchase(purchase_id: int, data: PurchaseUpdateIn, user: User = Depends(require_user), db: Session = Depends(get_db)):
+    allow(user, 'OWNER', 'PURCHASE')
+    bill = db.scalar(select(Purchase).options(
+        selectinload(Purchase.lines),
+        selectinload(Purchase.payments),
+        selectinload(Purchase.branch),
+        selectinload(Purchase.farmer)
+    ).where(Purchase.id == purchase_id).with_for_update())
+    if not bill:
+        raise HTTPException(404, 'Purchase bill not found')
+    check_branch(user, bill.branch_id)
+    if bill.status == 'VOID':
+        raise HTTPException(400, 'Cannot edit a voided purchase bill')
+
+    # Farmer resolution
+    target_farmer_id = data.farmer_id
+    if target_farmer_id:
+        target_farmer = db.get(Farmer, target_farmer_id)
+        if not target_farmer:
+            raise HTTPException(422, 'Farmer not found')
+    else:
+        name = (data.farmer_name or '').strip()
+        village = (data.farmer_village or '').strip()
+        mobile = (data.farmer_mobile or '').strip()
+        if not name or len(name) < 2:
+            raise HTTPException(422, 'Farmer name is required (at least 2 characters)')
+        if not village or len(village) < 2:
+            raise HTTPException(422, 'Farmer village is required (at least 2 characters)')
+        existing_farmer = db.scalar(select(Farmer).where(func.lower(Farmer.name) == name.lower(), func.lower(Farmer.village) == village.lower()))
+        if existing_farmer:
+            target_farmer = existing_farmer
+            if mobile and not target_farmer.mobile:
+                target_farmer.mobile = mobile
+        else:
+            target_farmer = Farmer(name=name, village=village, mobile=mobile)
+            db.add(target_farmer)
+            db.flush()
+            audit(db, user, bill.branch_id, 'CREATE_FARMER_INLINE', 'farmer', target_farmer.id, f'{name} ({village})')
+        target_farmer_id = target_farmer.id
+
+    computed = []
+    for li in data.lines:
+        gross = d(li.gross_kg, KG)
+        bag_cnt = int(li.bag_count)
+        bag_tare = d(li.bag_tare_kg, KG)
+        bag_deduction = d(bag_cnt * bag_tare, KG)
+        quality_kap = d(li.kapat_kg, KG)
+        total_line_kap = bag_deduction + quality_kap
+        rate = d(li.rate_per_20kg)
+        if total_line_kap >= gross:
+            raise HTTPException(422, 'Total deductions (Bardana + Kapat) cannot equal or exceed gross weight')
+        net = gross - total_line_kap
+        if net <= 0:
+            raise HTTPException(422, 'Net weight must be positive')
+        val = d(net * rate / Decimal('20'))
+        computed.append((li.variety.strip(), bag_cnt, bag_tare, gross, total_line_kap, net, rate, val))
+
+    total_bags = sum((x[1] for x in computed), 0)
+    gross = sum((x[3] for x in computed), Decimal('0'))
+    kapat = sum((x[4] for x in computed), Decimal('0'))
+    net = sum((x[5] for x in computed), Decimal('0'))
+    gross_value = sum((x[7] for x in computed), Decimal('0'))
+    weigh = d(data.weighbridge_charges); other = d(data.other_deductions); adjust = d(data.round_adjustment)
+    transport = d(data.market_transport_cost)
+    payable = gross_value - weigh - other - transport + adjust
+    if payable < 0 or payable > MAX:
+        raise HTTPException(422, 'Invalid final payable')
+
+    # Update bill fields
+    if data.purchase_date:
+        bill.purchase_date = data.purchase_date
+    bill.farmer_id = target_farmer_id
+    bill.rst_number = data.rst_number.strip()
+    bill.vehicle_number = data.vehicle_number.strip()
+    bill.total_bags = total_bags
+    bill.gross_kg = gross
+    bill.kapat_kg = kapat
+    bill.net_kg = net
+    bill.gross_value = gross_value
+    bill.weighbridge_charges = weigh
+    bill.other_deductions = other
+    bill.round_adjustment = adjust
+    bill.market_transport_cost = transport
+    bill.unload_at_godown = bool(data.unload_at_godown)
+    bill.payable = payable
+    bill.notes = data.notes.strip()
+    bill.cash_paid = d(data.cash_paid)
+    bill.pay_later_cash = d(data.pay_later_cash)
+    bill.pay_later_date = data.pay_later_date
+
+    # Replace line items
+    for old_l in list(bill.lines):
+        db.delete(old_l)
+    bill.lines = []
+    for variety, bc, bt, g, k, n, r, a in computed:
+        bill.lines.append(PurchaseLine(
+            purchase_id=bill.id,
+            variety=variety, bag_count=bc, bag_tare_kg=bt,
+            gross_kg=g, kapat_kg=k, net_kg=n, rate_per_20kg=r, line_amount=a
+        ))
+
+    # Payment settlement update
+    cash_paid = d(data.cash_paid)
+    cheque_amt = d(data.cheque_amount)
+    total_settlement = cash_paid + cheque_amt
+    if total_settlement > payable:
+        raise HTTPException(422, f'Cash + cheque settlement (₹{inr(total_settlement)}) exceeds farmer payable (₹{inr(payable)})')
+
+    cash_payment = next((p for p in bill.payments if p.idem_key == f'{bill.idem_key}-cash' or (p.method == 'CASH' and 'purchase' in (p.reference or '').lower())), None)
+    if cash_paid > Decimal('0'):
+        if cash_payment:
+            cash_payment.amount = cash_paid
+        else:
+            db.add(Payment(
+                idem_key=f'{bill.idem_key}-cash',
+                purchase_id=bill.id,
+                created_by=user.id,
+                method='CASH',
+                status='CLEARED',
+                amount=cash_paid,
+                reference='Cash paid on purchase (amended)',
+                instrument_date=None
+            ))
+    elif cash_payment:
+        db.delete(cash_payment)
+
+    cheq_payment = next((p for p in bill.payments if p.idem_key == f'{bill.idem_key}-cheq' or p.method == 'CHEQUE'), None)
+    if cheque_amt > Decimal('0') and data.cheque_number.strip():
+        if cheq_payment:
+            cheq_payment.amount = cheque_amt
+            cheq_payment.reference = data.cheque_number.strip()
+            cheq_payment.instrument_date = data.cheque_date
+        else:
+            db.add(Payment(
+                idem_key=f'{bill.idem_key}-cheq',
+                purchase_id=bill.id,
+                created_by=user.id,
+                method='CHEQUE',
+                status='PENDING',
+                amount=cheque_amt,
+                reference=data.cheque_number.strip(),
+                instrument_date=data.cheque_date
+            ))
+    elif cheq_payment and cheq_payment.status == 'PENDING':
+        db.delete(cheq_payment)
+
+    audit(db, user, bill.branch_id, 'EDIT_PURCHASE', 'purchase', bill.id, f'Amended bill {bill.number}')
+    db.commit()
+    loaded = db.scalar(select(Purchase).options(
+        selectinload(Purchase.lines),
+        selectinload(Purchase.payments),
+        selectinload(Purchase.branch),
+        selectinload(Purchase.farmer)
+    ).where(Purchase.id == bill.id))
+    return {'purchase': purchase_view(loaded, True), 'ok': True}
 
 @app.post('/api/purchases/{purchase_id}/payments',status_code=201)
 def add_payment(purchase_id:int,data:PaymentIn,user:User=Depends(require_user),db:Session=Depends(get_db)):
