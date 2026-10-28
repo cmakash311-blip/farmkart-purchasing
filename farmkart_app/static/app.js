@@ -1112,6 +1112,7 @@ async function billModal(id){
       <div class="row" style="justify-content:space-between;padding-right:24px;margin-bottom:18px">
         <h3>Purchase bill ${text(p.number)} ${isVoid?'<span class="pill bounced">VOIDED</span>':''}</h3>
         <div class="row" style="gap:8px">
+          <button class="primary" style="background:#2b6e3f;border-color:#235732;font-weight:700" id="modal-new-bill-btn">+ નવું બિલ (New Bill)</button>
           ${canVoid?`<button class="outline-btn" style="color:var(--bad, #dc2626);border-color:var(--bad, #dc2626)" id="void-bill-btn">Cancel / Void bill</button>`:''}
           ${!isVoid && ['OWNER','PURCHASE'].includes(state.user.role)?`<button class="secondary" style="font-weight:700;color:#853d32;border-color:#853d32" id="edit-bill-btn">✏ સુધારો (Edit)</button>`:''}
           <button class="outline-btn" style="background:#fefbf6;border-color:#b45309;color:#b45309;font-weight:700" id="print-thermal">🖨 80mm Thermal (થર્મલ)</button>
@@ -1122,6 +1123,26 @@ async function billModal(id){
         </div>
       </div>
       ${isVoid?`<div class="callout" style="border-left-color:var(--bad, #dc2626);background:#fee2e2;color:#991b1b;font-weight:600;margin-bottom:16px">⚠ THIS BILL HAS BEEN VOIDED / CANCELLED. All weights and balances are excluded from accounting and live reports.</div>`:''}
+      ${p.cheques && p.cheques.length > 0 ? `
+        <div class="no-print" style="margin-bottom:14px;background:#fefbf6;border:1px solid #ebdccb;border-radius:8px;padding:10px 14px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <strong style="color:#853d32;font-size:12.5px">🏦 ચેક પ્રિન્ટ વિકલ્પો (Cheque Print Options)</strong>
+            <span style="font-size:11px;color:var(--muted)">દરેક ચેક પર ક્લિક કરી સીધું પ્રિન્ટ કરો</span>
+          </div>
+          <div class="row" style="gap:8px;flex-wrap:wrap">
+            ${p.cheques.map((c, idx) => `
+              <button type="button" class="secondary print-single-chq-btn" data-chq-idx="${idx}" style="background:#fff;border:1px solid #853d32;color:#853d32;padding:6px 12px;font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer;border-radius:6px">
+                <span>🏦 ચેક #${idx+1}: <strong>${text(c.number)}</strong></span>
+                <span style="color:#bbb">|</span>
+                <span>${text(c.date || p.date)}</span>
+                <span style="color:#bbb">|</span>
+                <strong style="color:#15803d">${money(c.amount)}</strong>
+                <span>🖨️</span>
+              </button>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
     </div>
     <div class="receipt ${isVoid?'voided':''}">
       ${isVoid?`<div style="text-align:center;color:#dc2626;font-size:1.3rem;font-weight:bold;letter-spacing:2px;border:2px dashed #dc2626;padding:6px;margin-bottom:14px">VOIDED / રદ કરેલ</div>`:''}
@@ -1195,6 +1216,16 @@ async function billModal(id){
       if(r)r.classList.remove('thermal-receipt');
     },1000);
   }
+  if($('#modal-new-bill-btn'))$('#modal-new-bill-btn').onclick=()=>{closeModal();navigate('new');};
+  $$('.print-single-chq-btn').forEach(btn => {
+    btn.onclick = () => {
+      const idx = Number(btn.dataset.chqIdx);
+      const c = (p.cheques || [])[idx];
+      if(c){
+        chequeLeafModal({ ...p, cheque_number: c.number, cheque_date: c.date, cheque_amount: c.amount });
+      }
+    };
+  });
   if($('#edit-bill-btn'))$('#edit-bill-btn').onclick=()=>{closeModal();editPurchaseBill(p.id);};$('#print-bill').onclick=()=>window.print();
   $('#send-whatsapp-btn').onclick = () => {
     sendBillOnWhatsApp(p);
@@ -1439,12 +1470,14 @@ async function renderPayments(){
 
         return `<tr style="${rowBg}">
           <td><button class="link" data-bill="${p.purchase_id}"><strong>${text(p.bill_number)}</strong></button></td>
-          <td>${text(p.farmer)}</td>
-          <td><span class="pill ${isCash?'cleared':'pending'}">${text(p.method)}</span></td>
+          <td><span style="font-size:12px">${text(p.bill_date || '—')}</span></td>
+          <td><span style="font-size:12px">${text(p.instrument_date || '—')}</span></td>
           <td><code>${text(p.reference||'—')}</code></td>
-          <td><strong>${money(p.amount)}</strong></td>
-          <td>${statusControl}</td>
+          <td><strong>${text(p.farmer)}</strong></td>
+          <td><span style="font-size:12px;color:#555">${text(p.village || '—')}</span></td>
+          <td><strong style="font-size:13px">${money(p.amount)}</strong></td>
           <td>${dateControl}</td>
+          <td>${statusControl}</td>
           <td>${canEdit && !isCash ? `<button class="outline-btn" style="padding:3px 8px;font-size:11px" data-single-save="${p.id}">Save</button>` : '—'}</td>
         </tr>`;
       }).join('');
@@ -1468,7 +1501,16 @@ async function renderPayments(){
               <table style="width:100%;margin:0;border:none">
                 <thead>
                   <tr style="background:#f8f5f0;font-size:11px">
-                    <th>Bill</th><th>Farmer</th><th>Method</th><th>Cheque / UTR #</th><th>Amount</th><th>Status</th><th>Clearance Date</th><th>Action</th>
+                    <th>Bill No<br><small>બિલ નં</small></th>
+                    <th>Bill Date<br><small>બિલ તારીખ</small></th>
+                    <th>Cheque Date<br><small>ચેક તારીખ</small></th>
+                    <th>Cheque No<br><small>ચેક નં</small></th>
+                    <th>Farmer<br><small>ખેડૂત</small></th>
+                    <th>Village<br><small>ગામ</small></th>
+                    <th>Cheque Amount<br><small>ચેક રકમ</small></th>
+                    <th>Clearance Date<br><small>ક્લિયરન્સ તારીખ</small></th>
+                    <th>Status<br><small>સ્થિતિ</small></th>
+                    <th>Action<br><small>ક્રિયા</small></th>
                   </tr>
                 </thead>
                 <tbody>

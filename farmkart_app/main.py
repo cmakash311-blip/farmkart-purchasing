@@ -81,11 +81,27 @@ def purchase_view(p:Purchase,detail=False):
     data={'id':p.id,'number':p.number,'date':str(p.purchase_date),'branch_id':p.branch_id,'branch':p.branch.name,'farmer_id':p.farmer_id,'farmer':p.farmer.name,'village':p.farmer.village,'mobile':p.farmer.mobile,'rst':p.rst_number,'vehicle':p.vehicle_number,'total_bags':getattr(p,'total_bags',0) or 0,'gross_kg':kg(p.gross_kg),'kapat_kg':kg(p.kapat_kg),'net_kg':kg(p.net_kg),'gross_value':inr(p.gross_value),'weighbridge_charges':inr(p.weighbridge_charges),'other_deductions':inr(p.other_deductions),'market_transport_cost':inr(getattr(p,'market_transport_cost',Decimal('0')) or Decimal('0')),'unload_at_godown':bool(getattr(p,'unload_at_godown',False)),'round_adjustment':inr(p.round_adjustment),'payable':inr(p.payable),'status':p.status,'notes':p.notes,'payments_summary':pay_summary(p),'cash_paid':inr(getattr(p,'cash_paid',Decimal('0')) or Decimal('0')),'pay_later_cash':inr(getattr(p,'pay_later_cash',Decimal('0')) or Decimal('0')),'pay_later_date':str(getattr(p,'pay_later_date',None) or ''),'cheque_number':cheque_pay.reference if cheque_pay else '','cheque_date':str(cheque_pay.instrument_date or '') if cheque_pay else '','cheque_amount':inr(total_cheque_sum),'cheques':[{'number':x.reference,'date':str(x.instrument_date or ''),'amount':inr(x.amount)} for x in cheque_pays]}
     if detail:
         data['lines']=[{'variety':x.variety,'bag_count':getattr(x,'bag_count',0) or 0,'bag_tare_kg':kg(getattr(x,'bag_tare_kg',0) or 0),'gross_kg':kg(x.gross_kg),'kapat_kg':kg(x.kapat_kg),'net_kg':kg(x.net_kg),'rate_per_20kg':inr(x.rate_per_20kg),'amount':inr(x.line_amount)} for x in p.lines]
-        data['payments']=[payment_view(x,p.number,p.farmer.name,p.branch_id) for x in p.payments]
+        data['payments']=[payment_view(x,p.number,p.farmer.name,p.branch_id,str(p.purchase_date),p.farmer.village) for x in p.payments]
     return data
 
-def payment_view(p:Payment, bill_number=None, farmer=None, branch_id=None):
-    return {'id':p.id,'purchase_id':p.purchase_id,'bill_number':bill_number or p.purchase.number,'farmer':farmer or p.purchase.farmer.name,'branch_id':branch_id or p.purchase.branch_id,'method':p.method,'status':p.status,'amount':inr(p.amount),'reference':p.reference,'instrument_date':str(p.instrument_date or ''),'created_at':str(p.created_at)}
+def payment_view(p:Payment, bill_number=None, farmer=None, branch_id=None, bill_date=None, village=None):
+    b_date = bill_date or (str(p.purchase.purchase_date) if getattr(p, 'purchase', None) and getattr(p.purchase, 'purchase_date', None) else '')
+    vlg = village or (p.purchase.farmer.village if getattr(p, 'purchase', None) and getattr(p.purchase, 'farmer', None) and getattr(p.purchase.farmer, 'village', None) else '')
+    return {
+        'id': p.id,
+        'purchase_id': p.purchase_id,
+        'bill_number': bill_number or (p.purchase.number if getattr(p, 'purchase', None) else ''),
+        'bill_date': b_date,
+        'farmer': farmer or (p.purchase.farmer.name if getattr(p, 'purchase', None) and getattr(p.purchase, 'farmer', None) else ''),
+        'village': vlg,
+        'branch_id': branch_id or (p.purchase.branch_id if getattr(p, 'purchase', None) else None),
+        'method': p.method,
+        'status': p.status,
+        'amount': inr(p.amount),
+        'reference': p.reference,
+        'instrument_date': str(p.instrument_date or ''),
+        'created_at': str(p.created_at)
+    }
 
 def scoped(query,user,model):
     return query if user.role=='OWNER' else query.where(model.branch_id==user.branch_id)
