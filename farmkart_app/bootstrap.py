@@ -1,5 +1,6 @@
 """Run: python -m farmkart_app.bootstrap init ; python -m farmkart_app.bootstrap user"""
 import argparse, getpass
+from decimal import Decimal
 from sqlalchemy import select, inspect, text
 from .db import Base, engine, SessionLocal
 from .models import Branch, User
