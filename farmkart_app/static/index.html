@@ -1,20 +1,20 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#341c1a"><title>Farmkart Foods | Purchasing</title><link rel="stylesheet" href="/static/app.css?v=4"></head><body>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#341c1a"><title>Farmkart Foods | Purchasing</title><link rel="stylesheet" href="/static/app.css?v=5"></head><body>
 <div id="login" class="login-wrap">
   <div class="login-card"><div class="brand-mark">🥜</div><h1>Farmkart <span>Foods</span></h1><div class="tag">PEANUT PROCUREMENT SYSTEM</div><div class="login-rule"></div><p>One purchasing system for Himatnagar &amp; Modasa.</p><form id="login-form"><label>Username<input id="username" autocomplete="username" required placeholder="Your staff username"></label><label>Password<input id="password" type="password" autocomplete="current-password" required placeholder="Your password"></label><div id="login-error" class="error" hidden></div><button type="submit" class="primary full">Sign in <span>→</span></button></form><small>Authorized Farmkart Foods staff only</small></div>
 </div>
 <div id="shell" hidden>
   <aside id="sidebar"><div class="sidebar-brand"><div class="brand-mark small">🥜</div><div><strong>Farmkart</strong><small>FOODS · PROCUREMENT</small></div></div><div class="side-label">WORKSPACE</div><nav id="navigation">
-    <button class="nav active" data-view="dashboard"><span>▦</span> Overview</button>
-    <button class="nav" data-view="new"><span>⊕</span> New purchase bill</button>
-    <button class="nav" data-view="purchases"><span>▤</span> Purchase register</button>
-    <button class="nav" data-view="farmers"><span>♧</span> Farmers</button>
-    <button class="nav" data-view="payments" style="display:flex;align-items:center;justify-content:space-between"><span><span>₹</span> <span class="nav-label">Cheques & payments</span></span> <span id="pending-cheques-badge" class="nav-badge" style="display:none">0</span></button>
-    <button class="nav" data-view="reports"><span>▥</span> Reports & exports</button>
-    <button class="nav" data-view="users" id="users-nav" hidden><span>👥</span> Staff &amp; users</button>
-    <button class="nav" data-view="audit" id="audit-nav" hidden><span>◷</span> Audit history</button>
+    <button class="nav active" data-view="dashboard"><span class="nav-icon">▦</span> <span class="nav-label">Overview</span></button>
+    <button class="nav" data-view="new"><span class="nav-icon">⊕</span> <span class="nav-label">New purchase bill</span></button>
+    <button class="nav" data-view="purchases"><span class="nav-icon">▤</span> <span class="nav-label">Purchase register</span></button>
+    <button class="nav" data-view="farmers"><span class="nav-icon">♧</span> <span class="nav-label">Farmers & Khata</span></button>
+    <button class="nav" data-view="payments"><span class="nav-icon">₹</span> <span class="nav-label">Cheques & payments</span> <span id="pending-cheques-badge" class="nav-badge" style="display:none">0</span></button>
+    <button class="nav" data-view="reports"><span class="nav-icon">▥</span> <span class="nav-label">Reports & exports</span></button>
+    <button class="nav" data-view="users" id="users-nav" hidden><span class="nav-icon">👥</span> <span class="nav-label">Staff & users</span></button>
+    <button class="nav" data-view="audit" id="audit-nav" hidden><span class="nav-icon">◷</span> <span class="nav-label">Audit history</span></button>
   </nav><div class="sidebar-bottom"><div class="sidebar-info">TWO FACTORIES · ONE SYSTEM</div><div class="status-dot">Central cloud-ready design</div></div></aside>
   <div class="app-area"><header class="topbar"><button id="mobile-menu" class="icon-btn" aria-label="Open menu">☰</button><div><span class="crumb">FARMKART FOODS / </span><span id="top-title">Overview</span></div><div class="top-actions"><button id="lang-toggle" class="outline-btn" style="padding:6px 12px;font-weight:700;display:flex;align-items:center;gap:6px" title="Change Language / ભાષા બદલો"><span>🌐</span> <span id="lang-label">ગુજરાતી</span></button><select id="branch-filter" aria-label="Factory selection"></select><div class="user-meta"><strong id="user-name">—</strong><small id="user-role">—</small></div><button id="logout" class="outline-btn">Sign out</button></div></header><main class="content"><div id="notice" class="notice" hidden></div><div id="view"></div></main></div>
 </div>
 <div id="modal" class="modal" hidden><div class="dialog"><button id="modal-close" class="modal-close" aria-label="Close">×</button><div id="modal-content"></div></div></div>
-<script src="/static/app.js?v=4" defer></script></body></html>
+<script src="/static/app.js?v=5" defer></script></body></html>

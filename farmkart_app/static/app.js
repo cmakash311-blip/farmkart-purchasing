@@ -102,8 +102,13 @@ function applyLanguage(){
   $$('#navigation .nav').forEach(btn=>{
     const v=btn.dataset.view;
     if(navMap[v]){
-      const nodes=btn.childNodes;
-      nodes[nodes.length-1].textContent=' '+navMap[v];
+      const lbl = btn.querySelector('.nav-label');
+      if(lbl){
+        lbl.textContent = navMap[v];
+      } else {
+        const nodes=btn.childNodes;
+        nodes[nodes.length-1].textContent=' '+navMap[v];
+      }
     }
   });
   if(state.view&&$('#top-title')){
