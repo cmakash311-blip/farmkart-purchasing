@@ -7,52 +7,42 @@ from .models import Branch, User
 from .security import encode_password
 
 def migrate_db():
-    with engine.connect() as conn:
-        inspector = inspect(engine)
+    with engine.begin() as conn:
+        if not engine.url.drivername.startswith('sqlite'):
+            try:
+                conn.execute(text("SET lock_timeout = '5s'"))
+            except Exception:
+                pass
+        inspector = inspect(conn)
         tables = inspector.get_table_names()
         if 'purchases' in tables:
             cols = [c['name'] for c in inspector.get_columns('purchases')]
             if 'total_bags' not in cols:
                 conn.execute(text("ALTER TABLE purchases ADD COLUMN total_bags INTEGER DEFAULT 0"))
-                conn.commit()
+            if 'cash_paid' not in cols:
+                conn.execute(text("ALTER TABLE purchases ADD COLUMN cash_paid NUMERIC(15,2) DEFAULT 0"))
+            if 'pay_later_cash' not in cols:
+                conn.execute(text("ALTER TABLE purchases ADD COLUMN pay_later_cash NUMERIC(15,2) DEFAULT 0"))
+            if 'pay_later_date' not in cols:
+                conn.execute(text("ALTER TABLE purchases ADD COLUMN pay_later_date DATE"))
+            if 'market_transport_cost' not in cols:
+                conn.execute(text("ALTER TABLE purchases ADD COLUMN market_transport_cost NUMERIC(15,2) DEFAULT 0"))
+            if 'unload_at_godown' not in cols:
+                conn.execute(text("ALTER TABLE purchases ADD COLUMN unload_at_godown BOOLEAN DEFAULT FALSE"))
         if 'purchase_lines' in tables:
             cols = [c['name'] for c in inspector.get_columns('purchase_lines')]
             if 'bag_count' not in cols:
                 conn.execute(text("ALTER TABLE purchase_lines ADD COLUMN bag_count INTEGER DEFAULT 0"))
-                conn.commit()
             if 'bag_tare_kg' not in cols:
                 conn.execute(text("ALTER TABLE purchase_lines ADD COLUMN bag_tare_kg NUMERIC(15,3) DEFAULT 0"))
-                conn.commit()
-        # Point 1 Migration: payment settlement columns on purchases table
-        # cash_paid, pay_later_cash, pay_later_date stored on purchase row for fast receipt display
-        if 'purchases' in tables:
-            cols = [c['name'] for c in inspector.get_columns('purchases')]
-            if 'cash_paid' not in cols:
-                conn.execute(text("ALTER TABLE purchases ADD COLUMN cash_paid NUMERIC(15,2) DEFAULT 0"))
-                conn.commit()
-            if 'pay_later_cash' not in cols:
-                conn.execute(text("ALTER TABLE purchases ADD COLUMN pay_later_cash NUMERIC(15,2) DEFAULT 0"))
-                conn.commit()
-            if 'pay_later_date' not in cols:
-                conn.execute(text("ALTER TABLE purchases ADD COLUMN pay_later_date DATE"))
-                conn.commit()
-            # Point 3 Migration: Transport and Godown unloading costs
-            if 'market_transport_cost' not in cols:
-                conn.execute(text("ALTER TABLE purchases ADD COLUMN market_transport_cost NUMERIC(15,2) DEFAULT 0"))
-                conn.commit()
-            if 'unload_at_godown' not in cols:
-                conn.execute(text("ALTER TABLE purchases ADD COLUMN unload_at_godown BOOLEAN DEFAULT FALSE"))
-                conn.commit()
-        if 'purchase_lines' in tables:
-            cols = [c['name'] for c in inspector.get_columns('purchase_lines')]
             if 'material_id' not in cols:
                 try:
                     conn.execute(text("ALTER TABLE purchase_lines ADD COLUMN material_id INTEGER REFERENCES materials(id)"))
-                    conn.commit()
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"material_id foreign key note: {e}", flush=True)
 
 def initialize():
+    print("Initializing database schema...", flush=True)
     Base.metadata.create_all(engine)
     migrate_db()
     with SessionLocal.begin() as db:
@@ -84,8 +74,8 @@ def initialize():
                 branch_id=None,
                 active=True
             ))
-            print('Default admin user created: farmadmin')
-    print('Database schema initialized. Factories: HMT (Himatnagar), MDS (Modasa).')
+            print('Default admin user created: farmadmin', flush=True)
+    print('Database schema initialized. Factories: HMT (Himatnagar), MDS (Modasa).', flush=True)
 
 def create_user(username=None, name=None, role=None, branch_id=None, password=None):
     with SessionLocal.begin() as db:
