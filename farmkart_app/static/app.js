@@ -74,22 +74,54 @@ const title=(label,desc,action='')=>`<div class="page-head"><div><div class="eye
 
 const I18N={
   en:{
-    lang_btn:'English',dashboard:'Overview',new:'New purchase bill',purchases:'Purchase register',
-    farmers:'Farmers & Khata',materials:'Material master',payments:'Cheques & payments',reports:'Reports & exports',
-    users:'Staff & user management',audit:'Audit history',factory:'Factory',farmer:'Farmer',
+    lang_btn:'English',
+    billing_systems:'BILLING SYSTEMS',
+    bulk_billing:'Bulk Purchase Billings',
+    sales_invoice:'Sales Invoice',
+    farmer_billing:'Farmer Purchase Billings',
+    workspace:'YOUR WORKSPACE',
+    dashboard:'Overview',
+    new:'Bill entry',
+    purchases:'Saved bills',
+    materials:'Material master',
+    payments:'Monthly cheques',
+    reports:'Tally export & settings',
+    field_ops_section:'FIELD OPERATIONS',
+    farmers:'Farmers & Khata',
+    admin_section:'ADMIN & SYSTEM',
+    users:'Staff & user management',
+    audit:'Audit history',
+    current_location:'Current location:',
+    factory:'Factory',farmer:'Farmer',
     village:'Village',mobile:'Mobile',variety:'Variety',bags:'Bags (કટ્ટા)',tare:'Tare/bag (kg)',
     gross_kg:'Gross kg',kapat_kg:'Kapat kg',net_kg:'Net kg',rate_20kg:'Rate / 20kg (₹)',
     purchase_val:'Purchase value',farmer_payable:'Farmer payable',charges:'Weighbridge charges (₹)',
     deductions:'Other deductions (₹)',adjust:'Round adjustment (₹)',post_bill:'Post final purchase bill →'
   },
   gu:{
-    lang_btn:'ગુજરાતી',dashboard:'ડેશબોર્ડ (ઓવરવ્યૂ)',new:'નવી ખરીદી પાવતી',purchases:'ખરીદી રજીસ્ટર',
-    farmers:'ખેડૂત યાદી અને ખાતાવહી',materials:'મટીરીયલ માસ્ટર',payments:'ચૂકવણી અને ચેક',reports:'અહેવાલ અને નિકાસ',
-    users:'કર્મચારી વ્યવસ્થાપન',audit:'ઓડિટ હિસ્ટ્રી',factory:'ફેક્ટરી',farmer:'ખેડૂત',
+    lang_btn:'ગુજરાતી',
+    billing_systems:'બિલિંગ સિસ્ટમ્સ',
+    bulk_billing:'જથ્થાબંધ ખરીદી બિલિંગ',
+    sales_invoice:'વેચાણ ઇન્વોઇસ',
+    farmer_billing:'ખેડૂત ખરીદી બિલિંગ',
+    workspace:'તમારું વર્કસ્પેસ',
+    dashboard:'ડેશબોર્ડ (ઓવરવ્યૂ)',
+    new:'નવી પાવતી એન્ટ્રી',
+    purchases:'સાચવેલ પાવતીઓ',
+    materials:'મટીરીયલ માસ્ટર',
+    payments:'માસિક ચેક રજીસ્ટર',
+    reports:'ટેલી નિકાસ અને સેટિંગ્સ',
+    field_ops_section:'ક્ષેત્ર કામગીરી',
+    farmers:'ખેડૂત યાદી અને ખાતાવહી',
+    admin_section:'એડમિન અને સિસ્ટમ',
+    users:'કર્મચારી વ્યવસ્થાપન',
+    audit:'ઓડિટ હિસ્ટ્રી',
+    current_location:'હાલની ફેક્ટરી:',
+    factory:'ફેક્ટરી',farmer:'ખેડૂત',
     village:'ગામ',mobile:'મોબાઈલ',variety:'મગફળી જાત',bags:'કટ્ટા (બોરી)',tare:'બારદાન વજન (કિલો)',
     gross_kg:'કુલ વજન (કિલો)',kapat_kg:'કપાત (કિલો)',net_kg:'ચોખ્ખું વજન (કિલો)',rate_20kg:'ભાવ / મણ (૨૦ કિલો)',
-    purchase_val:'ખરીદી રકમ',farmer_payable:'ચૂકવવાપાત્ર ચોખ્ખી રકમ',charges:'કાંટા ખર્ચ (₹)',
-    deductions:'અન્ય કપાત (₹)',adjust:'રાઉન્ડ ઓફ (₹)',post_bill:'ખરીદી પાવતી કન્ફર્મ કરો →'
+    purchase_val:'ખરીદી કિંમત',farmer_payable:'ખેડૂતને ચૂકવવાપાત્ર રકમ',charges:'કાંટા ખર્ચ (રૂ.)',
+    deductions:'અન્ય કપાત (રૂ.)',adjust:'રાઉન્ડિંગ વટાવ (રૂ.)',post_bill:'પાકી પાવતી બનાવો →'
   }
 };
 function t(key){
@@ -98,7 +130,20 @@ function t(key){
 }
 function applyLanguage(){
   if($('#lang-label'))$('#lang-label').textContent=state.lang==='gu'?'ગુજરાતી':'English';
-  const navMap={dashboard:t('dashboard'),new:t('new'),purchases:t('purchases'),farmers:t('farmers'),payments:t('payments'),reports:t('reports'),users:t('users'),audit:t('audit')};
+  const navMap={
+    dashboard:t('dashboard'),
+    new:t('new'),
+    purchases:t('purchases'),
+    farmers:t('farmers'),
+    materials:t('materials'),
+    payments:t('payments'),
+    reports:t('reports'),
+    users:t('users'),
+    audit:t('audit'),
+    bulk_billing:t('bulk_billing'),
+    sales_invoice:t('sales_invoice'),
+    farmer_billing:t('farmer_billing')
+  };
   $$('#navigation .nav').forEach(btn=>{
     const v=btn.dataset.view;
     if(navMap[v]){
@@ -111,22 +156,86 @@ function applyLanguage(){
       }
     }
   });
+  if($('#side-label-billing')) $('#side-label-billing').textContent = t('billing_systems');
+  if($('#side-label-workspace')) $('#side-label-workspace').textContent = t('workspace');
+  if($('#side-label-field')) $('#side-label-field').textContent = t('field_ops_section');
+  if($('#side-label-admin')) $('#side-label-admin').textContent = t('admin_section');
+  if($('#sidebar-location-label')) $('#sidebar-location-label').textContent = t('current_location');
+
   if(state.view&&$('#top-title')){
     $('#top-title').textContent=navMap[state.view]||state.view;
+  }
+}
+function updateSidebarLocation(){
+  const valEl = $('#sidebar-location-val');
+  if(!valEl) return;
+  if(!state.branch){
+    valEl.textContent = '📍 All Factories (Central)';
+    return;
+  }
+  const branch = (state.branches||[]).find(b => String(b.id) === String(state.branch));
+  if(branch){
+    if(branch.code === 'MDS' || (branch.name && branch.name.toLowerCase().includes('modasa'))){
+      valEl.textContent = '📍 Farmkart Medhasan';
+    } else if(branch.code === 'HMT' || (branch.name && branch.name.toLowerCase().includes('himatnagar'))){
+      valEl.textContent = '📍 Farmkart Himatnagar';
+    } else {
+      valEl.textContent = `📍 Farmkart ${branch.name}`;
+    }
+  } else {
+    valEl.textContent = '📍 Farmkart Medhasan';
   }
 }
 function notify(message,kind='good'){const e=$('#notice');e.textContent=message;e.className='notice '+kind;e.hidden=false;clearTimeout(notify.t);notify.t=setTimeout(()=>e.hidden=true,6500)}
 async function api(path,method='GET',body){let options={method,headers:{},credentials:'include'};if(body!==undefined){options.headers['Content-Type']='application/json';options.body=JSON.stringify(body)}if(!['GET','HEAD'].includes(method)&&state.csrf)options.headers['X-CSRF-Token']=state.csrf;if(state.token)options.headers['Authorization']='Bearer '+state.token;let r;try{r=await fetch('/api'+path,options)}catch{throw Error('Cannot reach the server. Check your internet connection. Do not submit the transaction repeatedly.')}let obj;try{obj=await r.json()}catch{throw Error('Invalid response from the server')}if(!r.ok){if(r.status===401&&path!=='/login'){showLogin()}throw Error(typeof obj.detail==='string'?obj.detail:'Request failed')}return obj}
 function showLogin(){state.user=null;state.token='';state.csrf='';sessionStorage.removeItem('fkf_token');localStorage.removeItem('fkf_token');$('#shell').hidden=true;$('#login').hidden=false;$('#password').value=''}
-async function setupLoggedInUser(me){state.user=me;if(me.csrf_token)state.csrf=me.csrf_token;$('#login').hidden=true;$('#shell').hidden=false;$('#user-name').textContent=me.name;$('#user-role').textContent=me.role;$('#users-nav').hidden=me.role!=='OWNER';$('#audit-nav').hidden=me.role!=='OWNER';applyLanguage();if($('#lang-toggle')){$('#lang-toggle').onclick=()=>{state.lang=state.lang==='gu'?'en':'gu';localStorage.setItem('fkf_lang',state.lang);applyLanguage();navigate(state.view||'dashboard')}};try{state.branches=await api('/branches')}catch{state.branches=[]}state.branch=me.role==='OWNER'?'':String(me.branch_id);const branchSelector=$('#branch-filter');branchSelector.innerHTML=(me.role==='OWNER'?choice('','All factories'): '')+state.branches.map(b=>choice(b.id,b.name)).join('');branchSelector.value=state.branch;branchSelector.disabled=me.role!=='OWNER';updatePendingChequesBadge();navigate('dashboard')}
+async function setupLoggedInUser(me){state.user=me;if(me.csrf_token)state.csrf=me.csrf_token;$('#login').hidden=true;$('#shell').hidden=false;$('#user-name').textContent=me.name;$('#user-role').textContent=me.role;$('#users-nav').hidden=me.role!=='OWNER';$('#audit-nav').hidden=me.role!=='OWNER';if($('#admin-nav-section'))$('#admin-nav-section').hidden=me.role!=='OWNER';applyLanguage();if($('#lang-toggle')){$('#lang-toggle').onclick=()=>{state.lang=state.lang==='gu'?'en':'gu';localStorage.setItem('fkf_lang',state.lang);applyLanguage();navigate(state.view||'dashboard')}};try{state.branches=await api('/branches')}catch{state.branches=[]}state.branch=me.role==='OWNER'?'':String(me.branch_id);const branchSelector=$('#branch-filter');branchSelector.innerHTML=(me.role==='OWNER'?choice('','All factories'): '')+state.branches.map(b=>choice(b.id,b.name)).join('');branchSelector.value=state.branch;branchSelector.disabled=me.role!=='OWNER';updateSidebarLocation();updatePendingChequesBadge();navigate('dashboard')}
 async function initialize(){let me;try{me=await api('/me')}catch(e){showLogin();return}try{await setupLoggedInUser(me)}catch(err){console.error('Setup dashboard error:',err);$('#login').hidden=true;$('#shell').hidden=false;notify('Dashboard error: '+err.message,'bad')}}
 $('#login-form').addEventListener('submit',async e=>{e.preventDefault();const btn=e.target.querySelector('button');btn.disabled=true;$('#login-error').hidden=true;try{const data=await api('/login','POST',{username:$('#username').value,password:$('#password').value});if(data.token){state.token=data.token;sessionStorage.setItem('fkf_token',data.token);localStorage.setItem('fkf_token',data.token)}if(data.csrf_token)state.csrf=data.csrf_token;if(data.user){await setupLoggedInUser(data.user)}else{await initialize()}}catch(err){$('#login-error').textContent=err.message;$('#login-error').hidden=false}finally{btn.disabled=false}});
 $('#logout').onclick=async()=>{try{await api('/logout','POST',{})}finally{showLogin()}};
-$('#branch-filter').onchange=e=>{state.branch=e.target.value;updatePendingChequesBadge();navigate(state.view)};
+$('#branch-filter').onchange=e=>{state.branch=e.target.value;updateSidebarLocation();updatePendingChequesBadge();navigate(state.view)};
 $('#mobile-menu').onclick=()=>$('#sidebar').classList.toggle('open');
 $$('#navigation .nav').forEach(btn=>btn.onclick=()=>navigate(btn.dataset.view));
 function $$(s){return Array.from(document.querySelectorAll(s))}
-function navigate(view){if(view!=='new'){state.editingPurchaseId=null;state.editingPurchaseData=null;}state.view=view;$('#sidebar').classList.remove('open');$$('#navigation .nav').forEach(b=>b.classList.toggle('active',b.dataset.view===view));applyLanguage();$('#view').innerHTML='<div class="panel"><div class="empty">Loading…</div></div>';const f=({dashboard:renderDashboard,new:renderNew,purchases:renderPurchases,farmers:renderFarmers,materials:renderMaterials,payments:renderPayments,reports:renderReports,users:renderUsers,audit:renderAudit})[view];f().catch(err=>{$('#view').innerHTML=`<div class="notice bad">${text(err.message)}</div>`})}
+function navigate(view){
+  if(view!=='new'){state.editingPurchaseId=null;state.editingPurchaseData=null;}
+  if(view === 'bulk_billing' || view === 'sales_invoice'){
+    const isBulk = view === 'bulk_billing';
+    const title = isBulk ? 'Bulk Purchase Billings' : 'Sales Invoice';
+    const titleGu = isBulk ? 'જથ્થાબંધ ખરીદી બિલિંગ' : 'વેચાણ ઇન્વોઇસ';
+    const desc = isBulk ? 'Wholesale batch purchasing and trade procurement' : 'Outward commercial sales billing & GST invoicing';
+    state.view = view;
+    $('#sidebar').classList.remove('open');
+    $$('#navigation .nav').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+    applyLanguage();
+    $('#view').innerHTML = `
+      <div class="panel" style="max-width:720px;margin:40px auto;text-align:center;padding:44px 28px;box-shadow:0 12px 36px rgba(0,0,0,0.06);border-radius:14px">
+        <div style="font-size:46px;margin-bottom:12px">${isBulk ? '📦' : '🧾'}</div>
+        <h2 style="font-size:24px;color:#321d1a;margin-bottom:6px">${title}</h2>
+        <div style="font-size:16px;color:#934939;font-weight:600;margin-bottom:14px">${titleGu}</div>
+        <p class="muted" style="font-size:14.5px;line-height:1.6;margin-bottom:26px;max-width:540px;margin-left:auto;margin-right:auto">
+          ${desc}.<br>
+          This enterprise billing module is part of the multi-system procurement suite. Currently operating live in <strong>Farmer Purchase Billings (ખેડૂત ખરીદી પાવતી)</strong>.
+        </p>
+        <div class="row" style="gap:12px;justify-content:center">
+          <button class="primary" onclick="navigate('new')">Go to Farmer Bill Entry (પાવતી બનાવો) →</button>
+          <button class="secondary" onclick="navigate('purchases')">View Saved Bills (સાચવેલ પાવતીઓ)</button>
+        </div>
+      </div>
+    `;
+    return;
+  }
+  state.view=view;
+  $('#sidebar').classList.remove('open');
+  $$('#navigation .nav').forEach(b => {
+    if(b.id === 'btn-farmer-billing'){
+      b.classList.toggle('active', false);
+    } else {
+      b.classList.toggle('active', b.dataset.view === view);
+    }
+  });
+  applyLanguage();
+  $('#view').innerHTML='<div class="panel"><div class="empty">Loading…</div></div>';const f=({dashboard:renderDashboard,new:renderNew,purchases:renderPurchases,farmers:renderFarmers,materials:renderMaterials,payments:renderPayments,reports:renderReports,users:renderUsers,audit:renderAudit})[view];f().catch(err=>{$('#view').innerHTML=`<div class="notice bad">${text(err.message)}</div>`})}
 function scope(){return state.branch?'?branch_id='+encodeURIComponent(state.branch):''}
 function table(headers,rows,empty='No records found'){return `<div class="table-wrap"><table><thead><tr>${headers.map(h=>`<th>${text(h)}</th>`).join('')}</tr></thead><tbody>${rows.length?rows.join(''):`<tr><td class="empty" colspan="${headers.length}"><strong>${text(empty)}</strong>New records will appear here.</td></tr>`}</tbody></table></div>`}
 async function renderDashboard(){let [d,all]=await Promise.all([api('/dashboard'+scope()),api('/purchases'+scope())]);$('#view').innerHTML=title('Purchasing overview','Live purchasing visibility across your authorized factories.',`<button class="primary" id="quick-new">+ New purchase</button>`)+`<div class="grid four"><div class="stat"><div class="kicker">Today’s purchases <span class="emoji">▤</span></div><div class="number">${d.today_bills}</div><div class="foot">Bills posted today</div></div><div class="stat"><div class="kicker">Today’s quantity <span class="emoji">♧</span></div><div class="number">${number(d.today_kg)} <small>kg</small></div><div class="foot">Net peanut weight</div></div><div class="stat"><div class="kicker">Today’s purchase value <span class="emoji">₹</span></div><div class="number">${money(d.today_value)}</div><div class="foot">After charges and adjustments</div></div><div class="stat"><div class="kicker">Outstanding payments <span class="emoji">◷</span></div><div class="number">${money(d.outstanding)}</div><div class="foot">Includes pending cheques / bank transfers</div></div></div><div class="grid two" style="margin-top:21px"><div class="panel"><h3>All-time purchasing</h3><div class="detail-grid"><div><small>Total bills</small><strong>${d.all_bills}</strong></div><div><small>Total net weight</small><strong>${number(d.all_kg)} kg</strong></div><div><small>Total payable</small><strong>${money(d.total_purchase_value)}</strong></div></div></div><div class="panel"><h3>Payment instruments</h3><div class="stat" style="border:0;box-shadow:none;padding:0"><div class="kicker">Cheque / bank transfer pending clearance</div><div class="number">${money(d.pending_instruments)}</div></div></div></div><div class="panel" style="margin-top:20px"><div class="row" style="justify-content:space-between"><h3>Recent purchase bills</h3><button class="secondary" id="all-purchases">View all →</button></div>${table(['Bill','Factory','Farmer','Date','Net kg','Payable'],all.slice(0,8).map(p=>`<tr><td><button class="link" data-bill="${p.id}">${text(p.number)}</button></td><td>${text(p.branch)}</td><td>${text(p.farmer)}</td><td>${text(p.date)}</td><td>${number(p.net_kg)}</td><td>${money(p.payable)}</td></tr>`),'No purchase bills yet')}</div>`;$('#quick-new').onclick=()=>navigate('new');$('#all-purchases').onclick=()=>navigate('purchases');wireBills()}
