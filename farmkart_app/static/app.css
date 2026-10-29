@@ -53,3 +53,26 @@
   line-height: 1.4;
   box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
+
+.live-slip-card {
+  width: 100% !important;
+  max-width: 360px !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+.live-slip-card .receipt-inner {
+  width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+.live-slip-card table {
+  width: 100% !important;
+  max-width: 100% !important;
+  table-layout: fixed !important;
+  box-sizing: border-box !important;
+}
+.live-slip-card th, .live-slip-card td {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  box-sizing: border-box !important;
+}

@@ -42,11 +42,35 @@ def migrate_db():
             if 'unload_at_godown' not in cols:
                 conn.execute(text("ALTER TABLE purchases ADD COLUMN unload_at_godown BOOLEAN DEFAULT FALSE"))
                 conn.commit()
+        if 'purchase_lines' in tables:
+            cols = [c['name'] for c in inspector.get_columns('purchase_lines')]
+            if 'material_id' not in cols:
+                try:
+                    conn.execute(text("ALTER TABLE purchase_lines ADD COLUMN material_id INTEGER REFERENCES materials(id)"))
+                    conn.commit()
+                except Exception:
+                    pass
 
 def initialize():
     Base.metadata.create_all(engine)
     migrate_db()
     with SessionLocal.begin() as db:
+        from .models import Material
+        default_materials = [
+            ('MAT-24', 'મગફળી - 24', Decimal('1000.00')),
+            ('MAT-JAVA', 'Java', Decimal('1100.00')),
+            ('MAT-BOLD', 'Bold', Decimal('1050.00')),
+            ('MAT-G20', 'G-20', Decimal('1150.00')),
+            ('MAT-TJ', 'TJ', Decimal('1020.00')),
+            ('MAT-PH04', 'PHUT 04', Decimal('980.00')),
+            ('MAT-PH12', 'PHUT 12', Decimal('990.00')),
+            ('MAT-INSHELL', 'In-shell', Decimal('950.00')),
+            ('MAT-OTHER', 'Other', Decimal('1000.00')),
+        ]
+        for m_code, m_name, m_rate in default_materials:
+            if not db.scalar(select(Material).where((Material.code == m_code) | (Material.name == m_name))):
+                db.add(Material(code=m_code, name=m_name, default_rate=m_rate, active=True))
+
         for code,name in [('HMT','Himatnagar'),('MDS','Modasa')]:
             if not db.scalar(select(Branch).where(Branch.code==code)):
                 db.add(Branch(code=code,name=name))

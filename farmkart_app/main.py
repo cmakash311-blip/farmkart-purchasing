@@ -16,7 +16,7 @@ from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 from .db import get_db
-from .models import Branch, User, SessionToken, Farmer, BillSequence, Purchase, PurchaseLine, Payment, Audit
+from .models import Branch, User, SessionToken, Farmer, BillSequence, Purchase, PurchaseLine, Payment, Audit, Material
 from .security import COOKIE_NAME, hash_token, check_password, encode_password, new_session, get_session, require_user, check_branch, allow, can_access
 
 # Fail closed if someone mistakenly starts the pilot in production mode with demo settings.
@@ -80,7 +80,7 @@ def purchase_view(p:Purchase,detail=False):
     cheque_pay=cheque_pays[0] if cheque_pays else None
     data={'id':p.id,'number':p.number,'date':str(p.purchase_date),'branch_id':p.branch_id,'branch':p.branch.name,'farmer_id':p.farmer_id,'farmer':p.farmer.name,'village':p.farmer.village,'mobile':p.farmer.mobile,'rst':p.rst_number,'vehicle':p.vehicle_number,'total_bags':getattr(p,'total_bags',0) or 0,'gross_kg':kg(p.gross_kg),'kapat_kg':kg(p.kapat_kg),'net_kg':kg(p.net_kg),'gross_value':inr(p.gross_value),'weighbridge_charges':inr(p.weighbridge_charges),'other_deductions':inr(p.other_deductions),'market_transport_cost':inr(getattr(p,'market_transport_cost',Decimal('0')) or Decimal('0')),'unload_at_godown':bool(getattr(p,'unload_at_godown',False)),'round_adjustment':inr(p.round_adjustment),'payable':inr(p.payable),'status':p.status,'notes':p.notes,'payments_summary':pay_summary(p),'cash_paid':inr(getattr(p,'cash_paid',Decimal('0')) or Decimal('0')),'pay_later_cash':inr(getattr(p,'pay_later_cash',Decimal('0')) or Decimal('0')),'pay_later_date':str(getattr(p,'pay_later_date',None) or ''),'cheque_number':cheque_pay.reference if cheque_pay else '','cheque_date':str(cheque_pay.instrument_date or '') if cheque_pay else '','cheque_amount':inr(total_cheque_sum),'cheques':[{'number':x.reference,'date':str(x.instrument_date or ''),'amount':inr(x.amount)} for x in cheque_pays]}
     if detail:
-        data['lines']=[{'variety':x.variety,'bag_count':getattr(x,'bag_count',0) or 0,'bag_tare_kg':kg(getattr(x,'bag_tare_kg',0) or 0),'gross_kg':kg(x.gross_kg),'kapat_kg':kg(x.kapat_kg),'net_kg':kg(x.net_kg),'rate_per_20kg':inr(x.rate_per_20kg),'amount':inr(x.line_amount)} for x in p.lines]
+        data['lines']=[{'variety':x.variety,'material_id':getattr(x,'material_id',None),'material_name':(x.material_ref.name if getattr(x,'material_ref',None) else x.variety),'bag_count':getattr(x,'bag_count',0) or 0,'bag_tare_kg':kg(getattr(x,'bag_tare_kg',0) or 0),'gross_kg':kg(x.gross_kg),'kapat_kg':kg(x.kapat_kg),'net_kg':kg(x.net_kg),'rate_per_20kg':inr(x.rate_per_20kg),'amount':inr(x.line_amount)} for x in p.lines]
         data['payments']=[payment_view(x,p.number,p.farmer.name,p.branch_id,str(p.purchase_date),p.farmer.village) for x in p.payments]
     return data
 
@@ -120,6 +120,18 @@ class ChequeIn(BaseModel):
     cheque_number: str = Field(min_length=1, max_length=30)
     cheque_date: date | None = None
     cheque_amount: Decimal = Field(gt=0, le=1000000000)
+
+
+class MaterialIn(BaseModel):
+    name: str = Field(min_length=2, max_length=100)
+    code: str | None = Field(default=None, max_length=40)
+    hsn_code: str = Field(default='1202', max_length=20)
+    default_rate: Decimal = Field(default=Decimal('0'), ge=0)
+
+class MaterialUpdateIn(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=100)
+    default_rate: Decimal | None = Field(default=None, ge=0)
+    active: bool | None = None
 
 class LineIn(BaseModel):
     variety:str=Field(min_length=2,max_length=80)
@@ -275,6 +287,62 @@ def logout(request:Request, response:Response, db:Session=Depends(get_db)):
 def me(user_and_session: tuple[User, SessionToken] = Depends(get_session)):
     user, session = user_and_session
     return {'id':user.id,'name':user.full_name,'username':user.username,'role':user.role,'branch_id':user.branch_id,'csrf_token':session.csrf_token}
+
+
+def seed_default_materials(db: Session):
+    defaults = [
+        ('MAT-24', 'મગફળી - 24', Decimal('1000.00')),
+        ('MAT-JAVA', 'Java', Decimal('1100.00')),
+        ('MAT-BOLD', 'Bold', Decimal('1050.00')),
+        ('MAT-G20', 'G-20', Decimal('1150.00')),
+        ('MAT-TJ', 'TJ', Decimal('1020.00')),
+        ('MAT-PH04', 'PHUT 04', Decimal('980.00')),
+        ('MAT-PH12', 'PHUT 12', Decimal('990.00')),
+        ('MAT-INSHELL', 'In-shell', Decimal('950.00')),
+        ('MAT-OTHER', 'Other', Decimal('1000.00')),
+    ]
+    for c, n, r in defaults:
+        if not db.scalar(select(Material).where((Material.code == c) | (Material.name == n))):
+            db.add(Material(code=c, name=n, default_rate=r, active=True))
+    db.flush()
+
+@app.get('/api/materials')
+def get_materials(all: bool = False, db: Session = Depends(get_db)):
+    count = db.scalar(select(func.count(Material.id))) or 0
+    if count == 0:
+        seed_default_materials(db)
+        db.commit()
+    q = select(Material).order_by(Material.id)
+    if not all:
+        q = q.where(Material.active == True)
+    return [{
+        'id': m.id,
+        'code': m.code,
+        'name': m.name,
+        'hsn_code': m.hsn_code,
+        'default_rate': inr(m.default_rate),
+        'active': m.active
+    } for m in db.scalars(q)]
+
+@app.post('/api/materials', status_code=201)
+def create_material(data: MaterialIn, user: User = Depends(require_user), db: Session = Depends(get_db)):
+    allow(user, 'OWNER', 'PURCHASE')
+    clean_name = data.name.strip()
+    clean_code = (data.code or f"MAT-{uuid.uuid4().hex[:6].upper()}").strip()
+    if db.scalar(select(Material).where(func.lower(Material.name) == clean_name.lower())):
+        raise HTTPException(400, f"Material '{clean_name}' already exists in master")
+    mat = Material(
+        code=clean_code,
+        name=clean_name,
+        hsn_code=data.hsn_code.strip() or '1202',
+        default_rate=d(data.default_rate),
+        active=True
+    )
+    db.add(mat)
+    db.flush()
+    audit(db, user, user.branch_id, 'CREATE_MATERIAL', 'material', mat.id, f"{clean_code} - {clean_name}")
+    db.commit()
+    return {'id': mat.id, 'code': mat.code, 'name': mat.name, 'default_rate': inr(mat.default_rate), 'active': mat.active}
 
 @app.get('/api/branches')
 def branches(user:User=Depends(require_user),db:Session=Depends(get_db)):
@@ -473,7 +541,9 @@ def add_purchase(data:PurchaseIn,user:User=Depends(require_user),db:Session=Depe
         number=f'{branch.code}/{fyear}/{seq.last_number:06d}'
         bill=Purchase(number=number,idem_key=data.idem_key,branch_id=branch.id,farmer_id=target_farmer_id,created_by=user.id,purchase_date=actual_date,rst_number=data.rst_number.strip(),vehicle_number=data.vehicle_number.strip(),total_bags=total_bags,gross_kg=gross,kapat_kg=kapat,net_kg=net,gross_value=gross_value,weighbridge_charges=weigh,other_deductions=other,round_adjustment=adjust,payable=payable,notes=data.notes.strip(),status='POSTED',cash_paid=d(data.cash_paid),pay_later_cash=d(data.pay_later_cash),pay_later_date=data.pay_later_date,market_transport_cost=transport,unload_at_godown=bool(data.unload_at_godown))
         for variety,bc,bt,g,k,n,r,a in computed:
-            bill.lines.append(PurchaseLine(variety=variety,bag_count=bc,bag_tare_kg=bt,gross_kg=g,kapat_kg=k,net_kg=n,rate_per_20kg=r,line_amount=a))
+            mat = db.scalar(select(Material).where(func.lower(Material.name) == variety.lower()))
+            mat_id = mat.id if mat else None
+            bill.lines.append(PurchaseLine(variety=variety,material_id=mat_id,bag_count=bc,bag_tare_kg=bt,gross_kg=g,kapat_kg=k,net_kg=n,rate_per_20kg=r,line_amount=a))
         db.add(bill);db.flush()
         # Point 1 & 5: Auto-create payment records from bill-time settlement (single or multiple cheques)
         cheque_items = list(data.cheques) if data.cheques else []
@@ -684,9 +754,11 @@ def edit_purchase(purchase_id: int, data: PurchaseUpdateIn, user: User = Depends
         db.delete(old_l)
     bill.lines = []
     for variety, bc, bt, g, k, n, r, a in computed:
+        mat = db.scalar(select(Material).where(func.lower(Material.name) == variety.lower()))
+        mat_id = mat.id if mat else None
         bill.lines.append(PurchaseLine(
             purchase_id=bill.id,
-            variety=variety, bag_count=bc, bag_tare_kg=bt,
+            variety=variety, material_id=mat_id, bag_count=bc, bag_tare_kg=bt,
             gross_kg=g, kapat_kg=k, net_kg=n, rate_per_20kg=r, line_amount=a
         ))
 

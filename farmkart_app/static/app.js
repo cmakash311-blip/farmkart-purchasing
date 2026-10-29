@@ -663,8 +663,12 @@ async function renderNew(){
     $('#view').innerHTML='<div class="notice bad">You do not have permission to create purchase bills.</div>';
     return;
   }
-  const farmers = await api('/farmers?limit=60');
+  const [farmers, materials] = await Promise.all([
+    api('/farmers?limit=60'),
+    api('/materials')
+  ]);
   state.farmers = farmers;
+  state.materials = materials;
   state.lineCount = 0;
   savedSubmission = token();
   const isEdit = Boolean(state.editingPurchaseId && state.editingPurchaseData);
@@ -829,22 +833,28 @@ async function renderNew(){
 
           <!-- Meta Grid -->
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;font-size:11px;margin-bottom:10px">
-            <div><strong>Bill Number :</strong> <span id="slip-bill-no" style="font-weight:700;color:#853d32">${isEdit?editData.number:'—'}</span></div>
+            <div><strong>Bill No :</strong> <span id="slip-bill-no" style="font-weight:700;color:#853d32;word-break:break-all">${isEdit?editData.number:'—'}</span></div>
             <div><strong>Date :</strong> <span id="slip-date">${isEdit?editData.date:'—'}</span></div>
-            <div style="grid-column:span 2"><strong>Farmer Name :</strong> <span id="slip-farmer" style="font-weight:700">${isEdit?text(editData.farmer):'—'}</span></div>
+            <div style="grid-column:span 2"><strong>Farmer :</strong> <span id="slip-farmer" style="font-weight:700">${isEdit?text(editData.farmer):'—'}</span></div>
             <div><strong>ગામ :</strong> <span id="slip-village">${isEdit?text(editData.village):'—'}</span></div>
             <div><strong>મો. :</strong> <span id="slip-mobile">${isEdit?text(editData.mobile||'—'):'—'}</span></div>
             <div id="slip-veh-row" style="grid-column:span 2;display:${isEdit&&editData.vehicle?'block':'none'}"><strong>વાહન :</strong> <span id="slip-vehicle">${isEdit?text(editData.vehicle):'—'}</span></div>
           </div>
 
           <!-- Table -->
-          <table style="width:100%;font-size:10.5px;border-collapse:collapse;border:1px solid #ebdccb;margin-bottom:10px;text-align:right">
-            <thead style="background:#f5ede4;color:#5a3e28;font-size:10px">
+          <table style="width:100%;table-layout:fixed;font-size:10px;border-collapse:collapse;border:1px solid #ebdccb;margin-bottom:10px;text-align:right;box-sizing:border-box">
+            <colgroup>
+              <col style="width:33%">
+              <col style="width:21%">
+              <col style="width:23%">
+              <col style="width:23%">
+            </colgroup>
+            <thead style="background:#f5ede4;color:#5a3e28;font-size:9.5px">
               <tr>
-                <th style="text-align:left;padding:4px 6px">Material</th>
-                <th style="padding:4px 6px">Net Weight</th>
-                <th style="padding:4px 6px">Rate (Rs./20 Kg)</th>
-                <th style="padding:4px 6px">Amount (Rs.)</th>
+                <th style="text-align:left;padding:4px 3px;overflow:hidden">Material</th>
+                <th style="padding:4px 2px;overflow:hidden">Net Wt</th>
+                <th style="padding:4px 2px;overflow:hidden">Rate/20kg</th>
+                <th style="padding:4px 2px;overflow:hidden">Amount</th>
               </tr>
             </thead>
             <tbody id="slip-lines-body">
@@ -1030,9 +1040,19 @@ function addLine(init=null){
   tr.className = 'line-item-row';
   tr.style.borderBottom = '1px solid #ebdccb';
 
-  const defaultVariety = init ? text(init.variety) : 'મગફળી - 24';
-  const varieties = ['મગફળી - 24','Java','Bold','G-20','TJ','PHUT 04','PHUT 12','In-shell','Other'];
-  const varietyOpts = varieties.map(v => `<option value="${v}" ${v===defaultVariety?'selected':''}>${v}</option>`).join('');
+  const defaultVariety = init ? text(init.variety) : (state.materials && state.materials.length ? state.materials[0].name : 'મગફળી - 24');
+  const matList = (state.materials && state.materials.length) ? state.materials : [
+    {id: 1, name: 'મગફળી - 24', default_rate: '1000.00'},
+    {id: 2, name: 'Java', default_rate: '1100.00'},
+    {id: 3, name: 'Bold', default_rate: '1050.00'},
+    {id: 4, name: 'G-20', default_rate: '1150.00'},
+    {id: 5, name: 'TJ', default_rate: '1020.00'},
+    {id: 6, name: 'PHUT 04', default_rate: '980.00'},
+    {id: 7, name: 'PHUT 12', default_rate: '990.00'},
+    {id: 8, name: 'In-shell', default_rate: '950.00'},
+    {id: 9, name: 'Other', default_rate: '1000.00'}
+  ];
+  const varietyOpts = matList.map(m => `<option value="${text(m.name)}" data-id="${m.id}" data-rate="${m.default_rate}" ${m.name===defaultVariety?'selected':''}>${text(m.name)}</option>`).join('');
 
   tr.innerHTML = `
     <td style="text-align:center;padding:6px 4px">
@@ -1065,6 +1085,19 @@ function addLine(init=null){
     tr.remove();
     calculate();
   };
+
+  const varietySel = tr.querySelector('.line-variety');
+  const rateInp = tr.querySelector('.line-rate');
+  if(varietySel && rateInp){
+    varietySel.addEventListener('change', () => {
+      const opt = varietySel.options[varietySel.selectedIndex];
+      const defRate = opt?.dataset?.rate;
+      if(defRate && (!rateInp.value || Number(rateInp.value) === 0)){
+        rateInp.value = Number(defRate);
+      }
+      calculate();
+    });
+  }
 
   $('#purchase-lines').append(tr);
   calculate();
@@ -1104,12 +1137,14 @@ function calculate(){
     val += lineAmt;
 
     const variety = r.querySelector('.line-variety')?.value || 'મગફળી - 24';
-    lineRows.push(`<tr>
-      <td style="text-align:left;padding:4px 6px">${text(variety)}</td>
-      <td style="padding:4px 6px">${number(net)}</td>
-      <td style="padding:4px 6px">${number(rate)}</td>
-      <td style="padding:4px 6px;font-weight:700">${number(lineAmt)}</td>
-    </tr>`);
+    if(gross > 0 || rate > 0){
+      lineRows.push(`<tr>
+        <td style="text-align:left;padding:3px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${text(variety)}</td>
+        <td style="padding:3px 2px">${number(net)}</td>
+        <td style="padding:3px 2px">${number(rate)}</td>
+        <td style="padding:3px 2px;font-weight:700">${number(lineAmt)}</td>
+      </tr>`);
+    }
   });
 
   const weighCharges = n($('#charges')?.value);

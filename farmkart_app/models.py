@@ -85,10 +85,21 @@ class Purchase(Base):
     lines: Mapped[list['PurchaseLine']] = relationship(back_populates='purchase', cascade='all, delete-orphan', order_by='PurchaseLine.id')
     payments: Mapped[list['Payment']] = relationship(back_populates='purchase', order_by='Payment.id')
 
+class Material(Base):
+    __tablename__ = 'materials'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(40), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    hsn_code: Mapped[str] = mapped_column(String(20), default='1202')
+    default_rate: Mapped[Decimal] = mapped_column(Numeric(15,2), default=Decimal('0'))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
 class PurchaseLine(Base):
     __tablename__ = 'purchase_lines'
     id: Mapped[int] = mapped_column(primary_key=True)
     purchase_id: Mapped[int] = mapped_column(ForeignKey('purchases.id'))
+    material_id: Mapped[int | None] = mapped_column(ForeignKey('materials.id'), nullable=True)
     variety: Mapped[str] = mapped_column(String(80))
     bag_count: Mapped[int] = mapped_column(Integer, default=0)
     bag_tare_kg: Mapped[Decimal] = mapped_column(Numeric(15,3), default=Decimal('0'))
@@ -98,6 +109,7 @@ class PurchaseLine(Base):
     rate_per_20kg: Mapped[Decimal] = mapped_column(Numeric(15,2))
     line_amount: Mapped[Decimal] = mapped_column(Numeric(15,2))
     purchase: Mapped[Purchase] = relationship(back_populates='lines')
+    material_ref: Mapped['Material | None'] = relationship()
 
 class Payment(Base):
     __tablename__ = 'payments'
