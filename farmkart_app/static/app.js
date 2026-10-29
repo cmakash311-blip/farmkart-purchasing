@@ -658,88 +658,245 @@ async function renderPurchases(){
 }
 function wireBills(){$$('[data-bill]').forEach(b=>b.onclick=()=>billModal(+b.dataset.bill).catch(e=>notify(e.message,'bad')))}
 let savedSubmission=null;
-async function renderNew(){if(!['OWNER','PURCHASE'].includes(state.user.role)){$('#view').innerHTML='<div class="notice bad">You do not have permission to create purchase bills.</div>';return}const farmers=await api('/farmers?limit=60');state.farmers=farmers;state.lineCount=0;savedSubmission=token();const isEdit=Boolean(state.editingPurchaseId&&state.editingPurchaseData);const editData=state.editingPurchaseData;const pageTitle=isEdit?title(`સુધારો: બિલ નં. ${editData.number}`,'Amend peanut weights, bags, rate, deductions, or payment settlement.','<button id="cancel-edit-btn" class="outline-btn" style="border-color:#b45309;color:#b45309">Cancel Edit (સુધારો રદ કરો)</button>'):title('New purchase bill','Enter farmer details, peanut weights, bardana / bags, rate and deductions.');$('#view').innerHTML=pageTitle+`<form id="purchase-form" class="purchase-layout"><div class="grid"><div class="panel"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:12px"><div class="panel-subtitle" style="margin:0">01 / ખેડૂત અને આગમન વિગત (Farmer & arrival)</div><div id="next-bill-badge" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;padding:4px 12px;border-radius:20px;font-weight:700;font-size:12px">બિલ નં: —</div></div><div class="form-grid two"><label>ફેક્ટરી (Factory) *<select id="purchase-branch" required>${state.branches.map(b=>choice(b.id,b.name,String(b.id)===state.branch)).join('')}</select></label><label>બિલ તારીખ (Bill Date) *<input id="bill-date" type="date" required></label><label>ખેડૂતનું નામ (Farmer Name) *<input id="farmer-name" list="farmer-datalist" required placeholder="ખેડૂતનું નામ લખો..." autocomplete="off"><datalist id="farmer-datalist">${farmers.map(f=>`<option value="${text(f.name)}" data-id="${f.id}" data-village="${text(f.village)}" data-mobile="${text(f.mobile||'')}">${text(f.name)} (${text(f.village)})</option>`).join('')}</datalist><input type="hidden" id="selected-farmer-id" value=""></label><label>ગામ (Village) *<input id="farmer-village" required placeholder="ગામનું નામ"></label><label>મોબાઈલ નંબર (Mobile No.)<input id="farmer-mobile" type="tel" maxlength="20" placeholder="મોબાઈલ નંબર"></label><label>RST / પાવતી નંબર (Pavati no.)<input id="rst" maxlength="80" placeholder="આગમન સંદર્ભ / વજન કાંટો નં"></label><label>વાહન નંબર (Vehicle no.)<input id="vehicle" maxlength="60" placeholder="GJ-…"></label></div></div><div class="panel"><div class="panel-subtitle">02 / Peanut purchase line items (કટ્ટા / બારદાન ગણતરી)</div><div id="purchase-lines"></div><button type="button" class="secondary" id="add-line">+ Add peanut variety / lot</button><p class="help">Bag tare is deducted automatically: Net kg = Gross kg − (Bags × Tare/bag + Kapat kg). Rates are ₹ per 20 kg.</p></div><div class="panel"><div class="panel-subtitle">03 / ખર્ચ અને કપાત (Charges & deductions)</div><div class="form-grid two"><label>કાંટા ખર્ચ — Weighbridge charges (₹)<input id="charges" type="number" value="0" min="0" step="0.01"></label><label>માર્કેટ / ટ્રાન્સપોર્ટ ખર્ચ — Market transport cost (₹)<input id="transport-cost" type="number" value="0" min="0" step="0.01" placeholder="0.00"></label><label>અન્ય કપાત — Other deductions (₹)<input id="deductions" type="number" value="0" min="0" step="0.01"></label><label>રાઉન્ડ ઓફ — Round adjustment (₹)<input id="adjust" type="number" value="0" step="0.01"></label><label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:6px;grid-column:1/-1;background:#fbf8f4;padding:12px;border-radius:8px;border:1px solid #ebdccb"><input id="unload-godown" type="checkbox" style="width:20px;height:20px;cursor:pointer;margin:0"><span style="font-size:13px;font-weight:700;color:#5a3e28">ગોડાઉન ઉતરાઈ (Unload at Go-down)</span></label><label style="grid-column:1/-1">નોંધ / રિમાર્ક્સ — Notes / remarks<textarea id="notes" rows="2" maxlength="1000" placeholder="ગુણવત્તા અથવા સ્પેશિયલ નોંધ..."></textarea></label></div></div><div class="panel payment-panel"><div class="panel-subtitle">04 / પેમેન્ટ સેટલમેન્ટ (Payment settlement)</div><div class="form-grid two"><label>આજે ચૂકવેલ રોકડ — Paid today (Cash) ₹<input id="paid-cash" type="number" value="0" min="0" step="0.01" placeholder="0.00"></label><label>બાકી રોકડ — Pay later (Cash) ₹<input id="pay-later-cash" type="number" value="0" min="0" step="0.01" placeholder="0.00"></label><label>બાકી રોકડ તારીખ — Pay later date<input id="pay-later-date" type="date"></label></div><div class="cheque-box" style="margin-top:12px;background:#fbf8f4;border:1px solid #ebdccb;border-radius:8px;padding:12px"><div class="cheque-box-title" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><strong style="color:#5a3e28;font-size:13px">ચેક વિગત (Cheque details)</strong><button type="button" class="secondary" id="add-cheque-btn" style="padding:4px 10px;font-size:12px;border-color:#b45309;color:#b45309">+ ચેક ઉમેરો (Add Cheque)</button></div><div id="cheque-rows-container"></div><div id="cheque-helper" class="cheque-helper" style="font-size:12px;font-weight:700;color:#2b6e3f;margin-top:4px"></div></div></div></div><div class="panel live-slip-card" style="position:sticky;top:15px;background:#ffffff;border:2px solid #853d32;border-radius:12px;padding:16px;box-shadow:0 6px 20px rgba(0,0,0,0.06)">
-  <div class="slip-header" style="text-align:center;border-bottom:2px dashed #853d32;padding-bottom:10px;margin-bottom:12px">
-    <div style="font-size:14px;font-weight:900;letter-spacing:1px;color:#853d32;text-transform:uppercase">Farmkart Foods Private Limited</div>
-    <div style="font-size:10px;font-weight:700;color:#555;margin-top:2px">PEANUT PURCHASE RECEIPT · મગફળી ખરીદી પાવતી</div>
-    <div style="font-size:9.5px;color:#666;margin-top:2px">૬૫૭ સર્વે નંબર, હિંમતનગર-મોડાસા હાઈવે, મુ.પો. મેઢાસણ, જિ. અરવલ્લી</div>
-    <div style="font-size:9.5px;color:#666;margin-top:1px">Contact: 9427084696, 9429746466 · GST: 24AAHCF2020P1ZP</div>
-    <div id="slip-branch-name" style="font-size:11px;font-weight:700;color:#853d32;margin-top:3px">Factory</div>
-  </div>
-  
-  <div class="slip-meta-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;font-size:11px;background:#fcfaf7;padding:8px 10px;border-radius:6px;border:1px solid #eee5dc;margin-bottom:12px">
-    <div><strong>બિલ નં:</strong> <span id="slip-bill-no" style="color:#853d32;font-weight:700">—</span></div>
-    <div><strong>તારીખ:</strong> <span id="slip-date">—</span></div>
-    <div style="grid-column:span 2"><strong>ખેડૂત:</strong> <span id="slip-farmer" style="font-weight:700">—</span></div>
-    <div><strong>ગામ:</strong> <span id="slip-village">—</span></div>
-    <div><strong>મોબાઈલ:</strong> <span id="slip-mobile">—</span></div>
-    <div><strong>વાહન:</strong> <span id="slip-vehicle">—</span></div>
-    <div><strong>RST:</strong> <span id="slip-rst">—</span></div>
-  </div>
+async function renderNew(){
+  if(!['OWNER','PURCHASE'].includes(state.user.role)){
+    $('#view').innerHTML='<div class="notice bad">You do not have permission to create purchase bills.</div>';
+    return;
+  }
+  const farmers = await api('/farmers?limit=60');
+  state.farmers = farmers;
+  state.lineCount = 0;
+  savedSubmission = token();
+  const isEdit = Boolean(state.editingPurchaseId && state.editingPurchaseData);
+  const editData = state.editingPurchaseData;
+  const todayISO = new Date().toISOString().split('T')[0];
 
-  <div class="slip-table-wrap" style="border:1px solid #e0d5c7;border-radius:6px;overflow:hidden;margin-bottom:12px">
-    <table style="width:100%;font-size:11px;text-align:right;border-collapse:collapse">
-      <thead style="background:#f4ede4;color:#6b5847;font-size:10px">
-        <tr>
-          <th style="text-align:left;padding:5px">જાત</th>
-          <th style="padding:5px">કટ્ટા</th>
-          <th style="padding:5px">ચોખ્ખું</th>
-          <th style="padding:5px">ભાવ/૨૦</th>
-          <th style="padding:5px">રકમ</th>
-        </tr>
-      </thead>
-      <tbody id="slip-lines-body">
-        <tr><td colspan="5" style="text-align:center;padding:10px;color:#999">લોટ દાખલ કરો</td></tr>
-      </tbody>
-    </table>
-  </div>
+  const pageHeadHtml = isEdit
+    ? title(`સુધારો: બિલ નં. ${editData.number}`, 'Amend peanut weights, rate, deductions, or payment settlement.', '<button id="cancel-edit-btn" class="outline-btn" style="border-color:#b45309;color:#b45309">Cancel Edit (સુધારો રદ કરો)</button>')
+    : `
+      <div class="page-head" style="margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div class="eyebrow" style="font-size:11px;letter-spacing:1.5px;color:#853d32;font-weight:800;margin-bottom:3px">NEW BILL</div>
+          <h2 style="font-size:24px;font-weight:800;margin:0;color:#2c1b18">New Bill</h2>
+        </div>
+        <div id="next-bill-badge" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;padding:6px 16px;border-radius:20px;font-weight:700;font-size:12px;display:flex;align-items:center;gap:6px">
+          ▶ Bill numbering: <strong id="next-bill-num-text">—</strong>
+        </div>
+      </div>
+    `;
 
-  <div class="slip-totals" style="font-size:12px;background:#fdfcf9;padding:10px;border-radius:6px;border:1px solid #ede3d8;display:grid;gap:4px">
-    <div style="display:flex;justify-content:space-between"><span>કુલ વજન (Gross):</span><span id="slip-gross">0 kg</span></div>
-    <div style="display:flex;justify-content:space-between"><span>કુલ કપાત (Bardana+Kapat):</span><span id="slip-kapat">0 kg</span></div>
-    <div style="display:flex;justify-content:space-between;font-weight:700"><span>ચોખ્ખું વજન (Net):</span><span id="slip-net">0 kg</span></div>
-    <div style="display:flex;justify-content:space-between;border-top:1px dashed #ddd;padding-top:4px"><span>ખરીદી રકમ (Purchase):</span><span id="slip-gross-val">₹0.00</span></div>
-    <div id="slip-charges-row" style="display:flex;justify-content:space-between;color:#a84232"><span>કાંટા ખર્ચ:</span><span id="slip-charges">− ₹0.00</span></div>
-    <div id="slip-trans-row" style="display:none;justify-content:space-between;color:#a84232"><span>માર્કેટ / ટ્રાન્સપોર્ટ:</span><span id="slip-trans">− ₹0.00</span></div>
-    <div id="slip-deduct-row" style="display:none;justify-content:space-between;color:#a84232"><span>અન્ય કપાત:</span><span id="slip-deduct">− ₹0.00</span></div>
-    <div id="slip-godown-row" style="display:none;font-weight:700;color:#b45309;font-size:11px;margin-top:2px"><span>વિગત:</span><span>ગોડાઉન ઉતરાઈ</span></div>
-    <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;color:#853d32;border-top:2px solid #853d32;padding-top:6px;margin-top:2px">
-      <span>ચૂકવવાપાત્ર (Payable):</span>
-      <span id="slip-payable">₹0.00</span>
-    </div>
-  </div>
+  $('#view').innerHTML = pageHeadHtml + `
+    <form id="purchase-form" class="purchase-layout">
+      <div class="grid" style="gap:16px">
+        <!-- Top Information Panel (matching Video frame_002, frame_005) -->
+        <div class="panel" style="background:#ffffff;border-radius:12px;padding:20px;border:1px solid #ebdccb;box-shadow:0 2px 8px rgba(0,0,0,0.02)">
+          <select id="purchase-branch" style="display:none">
+            ${state.branches.map(b=>choice(b.id,b.name,String(b.id)===state.branch)).join('')}
+          </select>
+          
+          <div class="form-grid two" style="gap:14px 20px">
+            <!-- Row 1: Bill Number & Date -->
+            <label>Bill Number
+              <input id="bill-number-display" readonly style="background:#f9fafb;font-weight:700;color:#555" value="${isEdit?editData.number:'1613'}">
+            </label>
+            <label>Date *
+              <input id="bill-date" type="date" required value="${isEdit?editData.date:todayISO}">
+            </label>
 
-  <div class="slip-payment-summary" style="margin-top:10px;background:#f0f7ee;border:1px solid #b8d9b0;border-radius:8px;padding:8px 10px;font-size:11px">
-    <div style="font-weight:800;color:#2e6336;margin-bottom:4px;text-transform:uppercase;font-size:10px">ચૂકવણી વિગત (Payment)</div>
-    <div style="display:flex;justify-content:space-between"><span>આજે રોકડ:</span><strong id="slip-paid-cash">₹0.00</strong></div>
-    <div style="display:flex;justify-content:space-between"><span>ચેક રકમ:</span><strong id="slip-chq-amt">₹0.00</strong></div>
-    <div id="slip-chq-info" style="display:none;font-size:10px;color:#555;margin-top:2px"></div>
-    <div style="display:flex;justify-content:space-between;border-top:1px dashed #b8d9b0;margin-top:4px;padding-top:4px">
-      <span>બાકી રોકડ (Due):</span><strong id="slip-balance" style="color:#dc2626">₹0.00</strong>
-    </div>
-  </div>
+            <!-- Row 2: Farmer Name & Village -->
+            <label>Farmer Name *
+              <input id="farmer-name" list="farmer-datalist" required placeholder="CHAUDHARI YASHKUMAR BHARATBHAI" autocomplete="off" value="${isEdit?text(editData.farmer):''}">
+              <datalist id="farmer-datalist">
+                ${farmers.map(f=>`<option value="${text(f.name)}" data-id="${f.id}" data-village="${text(f.village)}" data-mobile="${text(f.mobile||'')}">${text(f.name)} (${text(f.village)})</option>`).join('')}
+              </datalist>
+              <input type="hidden" id="selected-farmer-id" value="${isEdit?(editData.farmer_id||''):''}">
+            </label>
+            <label>Village *
+              <input id="farmer-village" required placeholder="KHED" value="${isEdit?text(editData.village):''}">
+            </label>
 
-  <div class="slip-seed-banner" style="margin-top:12px;background:#5c241c;color:#fff;border-radius:6px;padding:8px 10px;font-size:10px;line-height:1.4">
-    <div style="font-weight:800;color:#ffd7a8;border-bottom:1px dashed rgba(255,255,255,0.25);padding-bottom:4px;margin-bottom:4px">
-      કાંતિ, 24 નંબર અને 20 નંબર મગફળીનું કલર સોર્ટેડ કરેલ સારી ગુણવત્તાવાળા બિયારણ મળશે.
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 6px;color:#fcefe3;font-size:9.5px">
-      <div>• સારી ક્વોલિટી</div>
-      <div>• ઊંચી ગુણવત્તા યુક્ત</div>
-      <div>• વધુ ઉપજવાની ક્ષમતાવાળું બિયારણ મળશે</div>
-      <div>• 6 થી 7 % ભેજનું પ્રમાણ</div>
-    </div>
-  </div>
+            <!-- Row 3: Mobile & RST પાવતી નંબર -->
+            <label>Mobile
+              <input id="farmer-mobile" type="tel" maxlength="20" placeholder="9429746466" value="${isEdit?text(editData.mobile||''):''}">
+            </label>
+            <label>RST પાવતી નંબર
+              <input id="rst" maxlength="80" placeholder="00001" value="${isEdit?text(editData.rst||''):''}">
+            </label>
 
-  <div id="bill-error" class="error-text"></div>
-  <button type="submit" class="primary full" id="post-bill" style="margin-top:14px">Post final purchase bill →</button>
-  <p class="right-note" style="margin-top:10px;font-size:11px;text-align:center">Verify all amounts before posting.</p>
-</div></form>`;if(state.branch)$('#purchase-branch').value=state.branch;
-  $('#add-line').onclick=()=>addLine();
-  const todayISO=new Date().toISOString().split('T')[0];
-  if($('#bill-date'))$('#bill-date').value=todayISO;
+            <!-- Row 4: Vehicle no (kept) & Weighbridge Charge -->
+            <label>Vehicle no. (વાહન નંબર)
+              <input id="vehicle" maxlength="60" placeholder="GJ-…" value="${isEdit?text(editData.vehicle||''):''}">
+            </label>
+            <label>Weighbridge Charge
+              <input id="charges" type="number" min="0" step="0.01" placeholder="20" value="${isEdit?Number((editData.weighbridge_charges||'').replace(/[^0-9.]/g,''))||0:'20'}">
+            </label>
+
+            <!-- Row 5: Round Off & Remarks / Notes (kept) -->
+            <label>Round Off
+              <input id="adjust" type="number" step="0.01" placeholder="0" value="${isEdit?Number((editData.round_adjustment||'').replace(/[^0-9.-]/g,''))||0:'0'}">
+            </label>
+            <label>Remarks / Notes (નોંધ / રિમાર્ક્સ)
+              <input id="notes" maxlength="1000" placeholder="ગુણવત્તા અથવા સ્પેશિયલ નોંધ..." value="${isEdit?text(editData.notes||''):''}">
+            </label>
+          </div>
+        </div>
+
+        <!-- Material Details Section (matching Video frame_005) -->
+        <div class="panel" style="background:#ffffff;border-radius:12px;padding:20px;border:1px solid #ebdccb;box-shadow:0 2px 8px rgba(0,0,0,0.02)">
+          <div style="margin-bottom:12px">
+            <strong style="font-size:15px;color:#2c1b18">Material Details</strong>
+            <p style="font-size:12px;color:var(--muted);margin:3px 0 0">શરૂઆતમાં એક રો રહેશે. જરૂર હોય ત્યારે નીચેના બટનથી નવો રો ઉમેરો.</p>
+          </div>
+
+          <div style="overflow-x:auto;margin-bottom:12px;border:1px solid #ebdccb;border-radius:8px">
+            <table style="width:100%;margin:0;border:none;border-collapse:collapse;font-size:12px">
+              <thead>
+                <tr style="background:#fcfaf7;border-bottom:1px solid #ebdccb;color:#6b5847;font-size:11px">
+                  <th style="width:40px;text-align:center;padding:8px 4px">પસંદ</th>
+                  <th style="min-width:140px;padding:8px">Material</th>
+                  <th style="min-width:110px;padding:8px">કુલ વજન (કિ.ગ્રા.)</th>
+                  <th style="min-width:95px;padding:8px">કપાત (કિ.ગ્રા.)</th>
+                  <th style="min-width:110px;padding:8px">Net Weight (કિ.ગ્રા.)</th>
+                  <th style="min-width:120px;padding:8px">ભાવ દર (રૂ./20 કિ.ગ્રા.)</th>
+                  <th style="min-width:110px;padding:8px">રકમ (રૂ.)</th>
+                  <th style="width:36px;text-align:center;padding:8px 4px"></th>
+                </tr>
+              </thead>
+              <tbody id="purchase-lines"></tbody>
+            </table>
+          </div>
+
+          <button type="button" class="secondary" id="add-line" style="font-weight:700;color:#853d32;border-color:#ebdccb">
+            માલનો રો ઉમેરો
+          </button>
+        </div>
+
+        <!-- Payment Settlement Section (matching Video frame_007, frame_011) -->
+        <div class="panel" style="background:#ffffff;border-radius:12px;padding:20px;border:1px solid #ebdccb;box-shadow:0 2px 8px rgba(0,0,0,0.02)">
+          <div class="form-grid three" style="gap:14px 20px;margin-bottom:16px">
+            <label>Paid Today (Cash)
+              <input id="paid-cash" type="number" min="0" step="0.01" placeholder="0.00" value="${isEdit?Number((editData.cash_paid||'').replace(/[^0-9.]/g,''))||0:'0'}">
+            </label>
+            <label>Pay Later (Cash)
+              <input id="pay-later-cash" type="number" min="0" step="0.01" placeholder="0.00" value="${isEdit?Number((editData.pay_later_cash||'').replace(/[^0-9.]/g,''))||0:'0'}">
+            </label>
+            <label>Pay Later Date
+              <input id="pay-later-date" type="date" value="${isEdit?text(editData.pay_later_date||''):''}">
+            </label>
+          </div>
+
+          <!-- Cheque Details -->
+          <div style="background:#fdfcf9;border:1px solid #ebdccb;border-radius:8px;padding:14px;margin-bottom:16px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+              <strong style="color:#2c1b18;font-size:13.5px">Cheque Details</strong>
+              <button type="button" class="secondary" id="add-cheque-btn" style="padding:4px 12px;font-size:12px;font-weight:700;color:#853d32;border-color:#ebdccb">ચેક ઉમેરો</button>
+            </div>
+            <div id="cheque-rows-container"></div>
+            <div id="cheque-helper" class="cheque-helper" style="font-size:12px;font-weight:700;color:#2b6e3f;margin-top:6px"></div>
+          </div>
+
+          <!-- Logistics Row -->
+          <div class="form-grid two" style="gap:14px 20px;align-items:center">
+            <label>Market transport cost
+              <input id="transport-cost" type="number" min="0" step="0.01" placeholder="0.00" value="${isEdit?Number((editData.market_transport_cost||'').replace(/[^0-9.]/g,''))||0:'0'}">
+            </label>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:22px;background:#fdfcf9;padding:10px 14px;border-radius:8px;border:1px solid #ebdccb">
+              <input id="unload-godown" type="checkbox" style="width:18px;height:18px;margin:0;cursor:pointer" ${isEdit&&editData.unload_at_godown?'checked':''}>
+              <span style="font-weight:700;font-size:13px;color:#5a3e28">Unload at go-down (ગોડાઉન ઉતરાઈ)</span>
+            </label>
+          </div>
+
+          <div id="bill-error" class="error-text" style="margin-top:12px"></div>
+          <button type="submit" class="primary full" id="post-bill" style="margin-top:16px;background:#853d32;border-color:#6e2f25;padding:13px;font-size:15px;font-weight:800;border-radius:8px">
+            ${isEdit?'સુધારો સાચવો (Update bill)':'બિલ સેવ કરો'}
+          </button>
+        </div>
+      </div>
+
+      <!-- Right Rail Live Receipt Preview (matching Video frame_005, frame_007) -->
+      <div class="panel live-slip-card" style="position:sticky;top:15px;background:#ffffff;border:1.5px solid #ebdccb;border-radius:12px;padding:16px;box-shadow:0 6px 24px rgba(0,0,0,0.05)">
+        <div style="font-size:10px;font-weight:800;letter-spacing:1px;color:#888;text-transform:uppercase;margin-bottom:2px">PRINT PREVIEW</div>
+        <div style="font-size:14px;font-weight:800;color:#2c1b18;margin-bottom:12px">સ્લિપ લેઆઉટ</div>
+
+        <div class="receipt-inner" style="background:#fffdfa;border:1px solid #ebdccb;border-radius:8px;padding:14px">
+          <!-- Header -->
+          <div style="text-align:center;border-bottom:1.5px dashed #853d32;padding-bottom:8px;margin-bottom:10px">
+            <div style="font-size:15px;font-weight:900;letter-spacing:1px;color:#853d32;text-transform:uppercase">Farmkart Foods</div>
+            <div style="font-size:10.5px;font-weight:800;color:#332a24;margin-top:2px">FARMKART FOODS PRIVATE LIMITED</div>
+            <div style="font-size:9px;color:#666;margin-top:2px">૬૫૭ સર્વે નંબર, હિંમતનગર-મોડાસા હાઈવે, મુ.પો. મેઢાસણ, તા. મોડાસા, જિ. અરવલ્લી</div>
+            <div style="font-size:9px;color:#555;font-weight:600;margin-top:1px">Contact No.: 9427084696, 9429746466 · GST No.: 24AAHCF2020P1ZP</div>
+          </div>
+
+          <!-- Meta Grid -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;font-size:11px;margin-bottom:10px">
+            <div><strong>Bill Number :</strong> <span id="slip-bill-no" style="font-weight:700;color:#853d32">${isEdit?editData.number:'—'}</span></div>
+            <div><strong>Date :</strong> <span id="slip-date">${isEdit?editData.date:'—'}</span></div>
+            <div style="grid-column:span 2"><strong>Farmer Name :</strong> <span id="slip-farmer" style="font-weight:700">${isEdit?text(editData.farmer):'—'}</span></div>
+            <div><strong>ગામ :</strong> <span id="slip-village">${isEdit?text(editData.village):'—'}</span></div>
+            <div><strong>મો. :</strong> <span id="slip-mobile">${isEdit?text(editData.mobile||'—'):'—'}</span></div>
+            <div id="slip-veh-row" style="grid-column:span 2;display:${isEdit&&editData.vehicle?'block':'none'}"><strong>વાહન :</strong> <span id="slip-vehicle">${isEdit?text(editData.vehicle):'—'}</span></div>
+          </div>
+
+          <!-- Table -->
+          <table style="width:100%;font-size:10.5px;border-collapse:collapse;border:1px solid #ebdccb;margin-bottom:10px;text-align:right">
+            <thead style="background:#f5ede4;color:#5a3e28;font-size:10px">
+              <tr>
+                <th style="text-align:left;padding:4px 6px">Material</th>
+                <th style="padding:4px 6px">Net Weight</th>
+                <th style="padding:4px 6px">Rate (Rs./20 Kg)</th>
+                <th style="padding:4px 6px">Amount (Rs.)</th>
+              </tr>
+            </thead>
+            <tbody id="slip-lines-body">
+              <tr><td colspan="4" style="text-align:center;padding:10px;color:#999">માલ વિગત ઉમેરો</td></tr>
+            </tbody>
+          </table>
+
+          <!-- Summary lines -->
+          <div style="font-size:11px;display:grid;gap:3px;margin-bottom:10px">
+            <div style="display:flex;justify-content:space-between"><span>Weighbridge Charge</span><strong id="slip-charges">0.00</strong></div>
+            <div id="slip-trans-row" style="display:none;justify-content:space-between;color:#a84232"><span>Market Transport Cost</span><strong id="slip-trans">0.00</strong></div>
+            <div id="slip-godown-row" style="display:none;justify-content:space-between;color:#b45309"><span>Delivery</span><strong>Go-down Unload</strong></div>
+            <div style="display:flex;justify-content:space-between;border-top:1.5px solid #853d32;padding-top:4px;font-size:13px;font-weight:800;color:#853d32">
+              <span>Final Amount</span>
+              <span id="slip-payable">₹0.00</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;border-top:1px dashed #ddd;padding-top:3px"><span>Total Cash Amount</span><strong id="slip-paid-cash">₹0.00</strong></div>
+            <div style="display:flex;justify-content:space-between"><span>Total Cheque Amount</span><strong id="slip-chq-amt">₹0.00</strong></div>
+          </div>
+
+          <!-- Cheque Details text & RST -->
+          <div id="slip-chq-info" style="display:none;font-size:10.5px;color:#333;margin-bottom:6px;padding:5px 8px;background:#f5fbf4;border-radius:4px;border:1px solid #d4ebd2"></div>
+          <div style="font-size:11px;margin-bottom:8px"><strong>RST પાવતી નં. :</strong> <span id="slip-rst">${isEdit?text(editData.rst||'—'):'—'}</span></div>
+
+          <!-- Authorised Signature -->
+          <div style="text-align:right;margin:12px 0 8px;font-size:10px;font-weight:700;color:#555">
+            Authorised Signature
+          </div>
+
+          <!-- Seed Marketing Banner -->
+          <div class="slip-seed-banner" style="margin-top:8px;background:#5c241c;color:#fff;border-radius:6px;padding:8px;font-size:9.5px;line-height:1.35">
+            <div style="font-weight:800;color:#ffd7a8;border-bottom:1px dashed rgba(255,255,255,0.25);padding-bottom:3px;margin-bottom:4px">
+              કાંતિ, 24 નંબર અને 20 નંબર મગફળીનું કલર સોર્ટેડ કરેલ સારી ગુણવત્તાવાળા બિયારણ મળશે.
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 4px;color:#fcefe3;font-size:9px">
+              <div>• સારી ક્વોલિટી</div>
+              <div>• ઊંચી ગુણવત્તા યુક્ત</div>
+              <div>• વધુ ઉપજવાની ક્ષમતાવાળું બિયારણ મળશે</div>
+              <div>• મગફળીનું બિયારણ મળશે</div>
+              <div style="grid-column:span 2">• 6 થી 7 % ભેજનું પ્રમાણ</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </form>
+  `;
+
+  if(state.branch) $('#purchase-branch').value = state.branch;
+  $('#add-line').onclick = () => addLine();
   if($('#add-cheque-btn')) $('#add-cheque-btn').onclick = () => addChequeRow();
   if($('#cheque-rows-container')) $('#cheque-rows-container').innerHTML = '';
+
   if(isEdit && editData.cheques && editData.cheques.length){
     editData.cheques.forEach(c => addChequeRow(c));
   } else if(isEdit && editData.cheque_number && Number((editData.cheque_amount||'0').replace(/[^0-9.]/g,'')) > 0){
@@ -750,12 +907,13 @@ async function renderNew(){if(!['OWNER','PURCHASE'].includes(state.user.role)){$
 
   async function updateNextBillNumber(){
     if(isEdit) return;
-    const bId = $('#purchase-branch')?.value;
+    const bId = $('#purchase-branch')?.value || state.branch;
     const bDate = $('#bill-date')?.value || todayISO;
     if(bId){
       try{
         const seq = await api(`/purchases/next-number?branch_id=${bId}&purchase_date=${bDate}`);
-        if($('#next-bill-badge')) $('#next-bill-badge').textContent = `બિલ નં: ${seq.formatted}`;
+        if($('#bill-number-display')) $('#bill-number-display').value = seq.next_number;
+        if($('#next-bill-num-text')) $('#next-bill-num-text').textContent = seq.formatted;
         if($('#slip-bill-no')) $('#slip-bill-no').textContent = seq.formatted;
       }catch(e){}
     }
@@ -766,63 +924,38 @@ async function renderNew(){if(!['OWNER','PURCHASE'].includes(state.user.role)){$
 
   if(isEdit){
     if($('#cancel-edit-btn')){
-      $('#cancel-edit-btn').onclick=()=>{
-        state.editingPurchaseId=null;
-        state.editingPurchaseData=null;
+      $('#cancel-edit-btn').onclick = () => {
+        state.editingPurchaseId = null;
+        state.editingPurchaseData = null;
         navigate('purchases');
       };
     }
-    $('#purchase-branch').value=String(editData.branch_id);
-    $('#bill-date').value=editData.date;
-    $('#next-bill-badge').textContent=`સુધારો: ${editData.number}`;
-    $('#slip-bill-no').textContent=editData.number;
-    $('#farmer-name').value=editData.farmer;
-    $('#farmer-village').value=editData.village;
-    $('#farmer-mobile').value=editData.mobile||'';
-    $('#selected-farmer-id').value=editData.farmer_id||'';
-    $('#rst').value=editData.rst||'';
-    $('#vehicle').value=editData.vehicle||'';
-    $('#charges').value=Number((editData.weighbridge_charges||'').replace(/[^0-9.]/g,''))||0;
-    $('#transport-cost').value=Number((editData.market_transport_cost||'').replace(/[^0-9.]/g,''))||0;
-    $('#deductions').value=Number((editData.other_deductions||'').replace(/[^0-9.]/g,''))||0;
-    $('#adjust').value=Number((editData.round_adjustment||'').replace(/[^0-9.-]/g,''))||0;
-    $('#unload-godown').checked=Boolean(editData.unload_at_godown);
-    $('#notes').value=editData.notes||'';
-
-    $('#paid-cash').value=Number((editData.cash_paid||'').replace(/[^0-9.]/g,''))||0;
-    $('#pay-later-cash').value=Number((editData.pay_later_cash||'').replace(/[^0-9.]/g,''))||0;
-    $('#pay-later-date').value=editData.pay_later_date||'';
-
-
-    $('#purchase-lines').innerHTML='';
-    state.lineCount=0;
-    if(editData.lines&&editData.lines.length){
-      editData.lines.forEach(l=>{
+    $('#purchase-lines').innerHTML = '';
+    state.lineCount = 0;
+    if(editData.lines && editData.lines.length){
+      editData.lines.forEach(l => {
         addLine({
-          variety:l.variety,
-          bag_count:l.bag_count,
-          bag_tare_kg:String(l.bag_tare_kg||'1.000').replace(/[^0-9.]/g,''),
-          gross_kg:String(l.gross_kg).replace(/[^0-9.]/g,''),
-          kapat_kg:String(l.kapat_kg||'0').replace(/[^0-9.]/g,''),
-          rate_per_20kg:String(l.rate_per_20kg).replace(/[^0-9.]/g,'')
+          variety: l.variety,
+          gross_kg: String(l.gross_kg).replace(/[^0-9.]/g,''),
+          kapat_kg: String(l.kapat_kg||'0').replace(/[^0-9.]/g,''),
+          rate_per_20kg: String(l.rate_per_20kg).replace(/[^0-9.]/g,'')
         });
       });
     } else {
       addLine();
     }
-    $('#post-bill').textContent='સુધારો સાચવો (Update bill) →';
   } else {
-    $('#purchase-lines').innerHTML='';
-    state.lineCount=0;
+    $('#purchase-lines').innerHTML = '';
+    state.lineCount = 0;
     addLine();
   }
-  
-  // Point 2: Farmer Datalist & Live Auto-fill
+
+  // Farmer Datalist & Live Auto-fill
   const nameInput = $('#farmer-name');
   const villageInput = $('#farmer-village');
   const mobileInput = $('#farmer-mobile');
   const idInput = $('#selected-farmer-id');
-  
+
   function checkFarmerMatch(){
     const val = nameInput.value.trim().toLowerCase();
     const match = state.farmers.find(f => f.name.toLowerCase() === val);
@@ -847,7 +980,7 @@ async function renderNew(){if(!['OWNER','PURCHASE'].includes(state.user.role)){$
           state.farmers = results;
           const dl = $('#farmer-datalist');
           if(dl){
-            dl.innerHTML = results.map(f=>`<option value="${text(f.name)}">${text(f.name)} (${text(f.village)})</option>`).join('');
+            dl.innerHTML = results.map(f=>`<option value="${text(f.name)}" data-id="${f.id}" data-village="${text(f.village)}" data-mobile="${text(f.mobile||'')}">${text(f.name)} (${text(f.village)})</option>`).join('');
           }
           checkFarmerMatch();
         }catch(e){}
@@ -856,7 +989,8 @@ async function renderNew(){if(!['OWNER','PURCHASE'].includes(state.user.role)){$
   });
   nameInput.addEventListener('change', checkFarmerMatch);
 
-  $('#purchase-form').oninput=calculate;$('#purchase-form').onsubmit=submitBill;
+  $('#purchase-form').oninput = calculate;
+  $('#purchase-form').onsubmit = submitBill;
 
   // Rapid Weighbridge Enter-Key Navigation & Auto-Select
   const purchaseForm = $('#purchase-form');
@@ -885,95 +1019,151 @@ async function renderNew(){if(!['OWNER','PURCHASE'].includes(state.user.role)){$
     });
   }
 }
-function addLine(init=null){if(state.lineCount>=25){notify('Maximum 25 items per bill.','bad');return}const idx=state.lineCount++;const e=document.createElement('div');e.className='item-grid';e.innerHTML=`<label>Variety<input class="line-variety" value="${init?text(init.variety):'Java'}" maxlength="80" required list="varieties"><datalist id="varieties"><option value="Java"><option value="Bold"><option value="G-20"><option value="મગફળી - 24"><option value="TJ"><option value="PHUT 04"><option value="PHUT 12"><option value="In-shell"><option value="Other"></datalist></label><label>Bags (કટ્ટા)<input class="line-bags" type="number" min="0" max="100000" step="1" value="${init?init.bag_count:0}" placeholder="0"></label><label>Tare/bag (kg)<input class="line-tare" type="number" min="0" max="50" step="0.001" value="${init?init.bag_tare_kg:'1.000'}" placeholder="1.000"></label><label>Gross kg<input class="line-gross" type="number" min="0.001" max="10000000" step="0.001" required value="${init?init.gross_kg:''}" placeholder="1000"></label><label>Kapat kg<input class="line-kapat" type="number" min="0" max="10000000" step="0.001" value="${init?init.kapat_kg:0}" placeholder="0"></label><label>Rate / 20kg (₹)<input class="line-rate" type="number" min="0.01" max="10000000" step="0.01" required value="${init?init.rate_per_20kg:''}" placeholder="2200"></label><button type="button" class="mini-button" title="Remove line">×</button>`;e.querySelector('button').onclick=()=>{e.remove();calculate()};$('#purchase-lines').append(e);calculate()}
-function lines(){return $$('#purchase-lines .item-grid').map(r=>({variety:r.querySelector('.line-variety').value.trim(),bag_count:Math.max(0,parseInt(r.querySelector('.line-bags').value||0,10)),bag_tare_kg:r.querySelector('.line-tare').value||'0',gross_kg:r.querySelector('.line-gross').value,kapat_kg:r.querySelector('.line-kapat').value||'0',rate_per_20kg:r.querySelector('.line-rate').value}))}
-function calculate(){
-  const all=lines(),n=v=>Number(v||0);
-  let totalBags=0,gross=0,bardana=0,qualityKapat=0,val=0;
-  const lineRows=[];
-  for(const x of all){
-    const bags=n(x.bag_count);
-    const tare=n(x.bag_tare_kg);
-    const lineBardana=bags*tare;
-    const lineQuality=n(x.kapat_kg);
-    const lineTotalKapat=lineBardana+lineQuality;
-    const lineGross=n(x.gross_kg);
-    const lineNet=Math.max(0,lineGross-lineTotalKapat);
-    const rate=n(x.rate_per_20kg);
-    const lineAmount=Math.round(lineNet*rate/20*100)/100;
-    totalBags+=bags;gross+=lineGross;bardana+=lineBardana;qualityKapat+=lineQuality;val+=lineAmount;
-    lineRows.push(`<tr>
-      <td style="text-align:left;padding:4px">${text(x.variety||'Java')}</td>
-      <td style="padding:4px">${bags}</td>
-      <td style="padding:4px">${number(lineNet)}</td>
-      <td style="padding:4px">₹${number(rate)}</td>
-      <td style="padding:4px;font-weight:700">₹${number(lineAmount)}</td>
-    </tr>`);
-  }
-  const totalKapat=bardana+qualityKapat;
-  const net=Math.max(0,gross-totalKapat);
-  const weighCharges=n($('#charges')?.value);
-  const transportCost=n($('#transport-cost')?.value);
-  const otherDeduct=n($('#deductions')?.value);
-  const adjust=n($('#adjust')?.value);
-  const deduct=weighCharges+otherDeduct+transportCost;
-  const end=Math.max(0,val-deduct+adjust);
 
-  // Update Live Gujarati Slip Table & Totals (Point 5)
+function addLine(init=null){
+  if(state.lineCount >= 25){
+    notify('Maximum 25 items per bill.', 'bad');
+    return;
+  }
+  const idx = state.lineCount++;
+  const tr = document.createElement('tr');
+  tr.className = 'line-item-row';
+  tr.style.borderBottom = '1px solid #ebdccb';
+
+  const defaultVariety = init ? text(init.variety) : 'મગફળી - 24';
+  const varieties = ['મગફળી - 24','Java','Bold','G-20','TJ','PHUT 04','PHUT 12','In-shell','Other'];
+  const varietyOpts = varieties.map(v => `<option value="${v}" ${v===defaultVariety?'selected':''}>${v}</option>`).join('');
+
+  tr.innerHTML = `
+    <td style="text-align:center;padding:6px 4px">
+      <input type="checkbox" class="line-check" checked style="width:16px;height:16px;margin:0;cursor:pointer">
+    </td>
+    <td style="padding:6px">
+      <select class="line-variety" required style="padding:7px 8px;font-size:12px;width:100%">${varietyOpts}</select>
+    </td>
+    <td style="padding:6px">
+      <input class="line-gross" type="number" min="0.01" max="10000000" step="0.01" required value="${init?init.gross_kg:''}" placeholder="1000" style="padding:7px 8px;font-size:12px;text-align:right;width:100%">
+    </td>
+    <td style="padding:6px">
+      <input class="line-kapat" type="number" min="0" max="10000000" step="0.01" value="${init?init.kapat_kg:0}" placeholder="0" style="padding:7px 8px;font-size:12px;text-align:right;width:100%">
+    </td>
+    <td style="padding:6px">
+      <input class="line-net" type="text" readonly style="padding:7px 8px;font-size:12px;text-align:right;background:#f9fafb;font-weight:700;width:100%" value="0">
+    </td>
+    <td style="padding:6px">
+      <input class="line-rate" type="number" min="0.01" max="10000000" step="0.01" required value="${init?init.rate_per_20kg:''}" placeholder="1000" style="padding:7px 8px;font-size:12px;text-align:right;width:100%">
+    </td>
+    <td style="padding:6px">
+      <input class="line-amt" type="text" readonly style="padding:7px 8px;font-size:12px;text-align:right;background:#f9fafb;font-weight:700;width:100%" value="0.00">
+    </td>
+    <td style="text-align:center;padding:6px 4px">
+      <button type="button" class="mini-button line-del-btn" title="કાઢી નાખો" style="border:none;background:#fee2e2;color:#dc2626;border-radius:4px;width:24px;height:24px;cursor:pointer;font-weight:bold">×</button>
+    </td>
+  `;
+
+  tr.querySelector('.line-del-btn').onclick = () => {
+    tr.remove();
+    calculate();
+  };
+
+  $('#purchase-lines').append(tr);
+  calculate();
+}
+
+function lines(){
+  return $$('#purchase-lines tr.line-item-row, #purchase-lines .item-grid').map(r => ({
+    variety: r.querySelector('.line-variety')?.value?.trim() || 'મગફળી - 24',
+    bag_count: 0,
+    bag_tare_kg: '0',
+    gross_kg: r.querySelector('.line-gross')?.value || '0',
+    kapat_kg: r.querySelector('.line-kapat')?.value || '0',
+    rate_per_20kg: r.querySelector('.line-rate')?.value || '0'
+  }));
+}
+
+function calculate(){
+  const n = v => Number(v || 0);
+  let totalGross = 0, totalKapat = 0, totalNet = 0, val = 0;
+  const lineRows = [];
+
+  $$('#purchase-lines tr.line-item-row').forEach(r => {
+    const gross = n(r.querySelector('.line-gross')?.value);
+    const kapat = n(r.querySelector('.line-kapat')?.value);
+    const net = Math.max(0, gross - kapat);
+    const rate = n(r.querySelector('.line-rate')?.value);
+    const lineAmt = Math.round(net * rate / 20 * 100) / 100;
+
+    const netEl = r.querySelector('.line-net');
+    if(netEl) netEl.value = net ? number(net) : '0';
+    const amtEl = r.querySelector('.line-amt');
+    if(amtEl) amtEl.value = lineAmt ? money(lineAmt).replace('₹','') : '0.00';
+
+    totalGross += gross;
+    totalKapat += kapat;
+    totalNet += net;
+    val += lineAmt;
+
+    const variety = r.querySelector('.line-variety')?.value || 'મગફળી - 24';
+    lineRows.push(`<tr>
+      <td style="text-align:left;padding:4px 6px">${text(variety)}</td>
+      <td style="padding:4px 6px">${number(net)}</td>
+      <td style="padding:4px 6px">${number(rate)}</td>
+      <td style="padding:4px 6px;font-weight:700">${number(lineAmt)}</td>
+    </tr>`);
+  });
+
+  const weighCharges = n($('#charges')?.value);
+  const transportCost = n($('#transport-cost')?.value);
+  const adjust = n($('#adjust')?.value);
+  const end = Math.max(0, val - weighCharges - transportCost + adjust);
+
+  // Update Live Slip Table & Totals (matching Video frame_005, frame_007)
   if($('#slip-lines-body')){
-    $('#slip-lines-body').innerHTML=lineRows.length?lineRows.join(''):'<tr><td colspan="5" style="text-align:center;padding:10px;color:#999">લોટ દાખલ કરો</td></tr>';
+    $('#slip-lines-body').innerHTML = lineRows.length ? lineRows.join('') : '<tr><td colspan="4" style="text-align:center;padding:10px;color:#999">માલ વિગત ઉમેરો</td></tr>';
   }
-  if($('#slip-gross')) $('#slip-gross').textContent = `${number(gross)} kg (${totalBags} કટ્ટા)`;
-  if($('#slip-kapat')) $('#slip-kapat').textContent = `${number(totalKapat)} kg`;
-  if($('#slip-net')) $('#slip-net').textContent = `${number(net)} kg`;
-  if($('#slip-gross-val')) $('#slip-gross-val').textContent = money(val);
-  if($('#slip-charges')) $('#slip-charges').textContent = `− ${money(weighCharges)}`;
-  
+  if($('#slip-charges')) $('#slip-charges').textContent = number(weighCharges);
+  if($('#slip-payable')) $('#slip-payable').textContent = money(end);
+
   if($('#slip-trans-row')){
-    if(transportCost>0){
-      $('#slip-trans-row').style.display='flex';
-      $('#slip-trans').textContent=`− ${money(transportCost)}`;
+    if(transportCost > 0){
+      $('#slip-trans-row').style.display = 'flex';
+      $('#slip-trans').textContent = `− ${money(transportCost)}`;
     } else {
-      $('#slip-trans-row').style.display='none';
-    }
-  }
-  if($('#slip-deduct-row')){
-    if(otherDeduct>0){
-      $('#slip-deduct-row').style.display='flex';
-      $('#slip-deduct').textContent=`− ${money(otherDeduct)}`;
-    } else {
-      $('#slip-deduct-row').style.display='none';
+      $('#slip-trans-row').style.display = 'none';
     }
   }
   if($('#slip-godown-row')){
-    $('#slip-godown-row').style.display=$('#unload-godown')?.checked?'flex':'none';
+    $('#slip-godown-row').style.display = $('#unload-godown')?.checked ? 'flex' : 'none';
   }
-  if($('#slip-payable')) $('#slip-payable').textContent = money(end);
 
-  // Live Meta: Farmer, Village, Mobile, Vehicle, RST, Date, Branch
-  const fName=$('#farmer-name')?.value.trim();
-  const fVillage=$('#farmer-village')?.value.trim();
-  const fMobile=$('#farmer-mobile')?.value.trim();
-  const vNum=$('#vehicle')?.value.trim();
-  const rstNum=$('#rst')?.value.trim();
-  const bDate=$('#bill-date')?.value;
-  const bSelect=$('#purchase-branch');
-  const bName=bSelect?.options[bSelect.selectedIndex]?.text||'Factory';
+  // Live Meta: Farmer, Village, Mobile, Vehicle, RST, Date
+  const fName = $('#farmer-name')?.value.trim();
+  const fVillage = $('#farmer-village')?.value.trim();
+  const fMobile = $('#farmer-mobile')?.value.trim();
+  const vNum = $('#vehicle')?.value.trim();
+  const rstNum = $('#rst')?.value.trim();
+  const bDate = $('#bill-date')?.value;
 
-  if($('#slip-farmer')) $('#slip-farmer').textContent = fName||'—';
-  if($('#slip-village')) $('#slip-village').textContent = fVillage||'—';
-  if($('#slip-mobile')) $('#slip-mobile').textContent = fMobile||'—';
-  if($('#slip-vehicle')) $('#slip-vehicle').textContent = vNum||'—';
-  if($('#slip-rst')) $('#slip-rst').textContent = rstNum||'—';
-  if($('#slip-date')) $('#slip-date').textContent = bDate||'—';
-  if($('#slip-branch-name')) $('#slip-branch-name').textContent = bName;
+  if($('#slip-farmer')) $('#slip-farmer').textContent = fName || '—';
+  if($('#slip-village')) $('#slip-village').textContent = fVillage || '—';
+  if($('#slip-mobile')) $('#slip-mobile').textContent = fMobile || '—';
+  if($('#slip-rst')) $('#slip-rst').textContent = rstNum || '—';
+  if($('#slip-date')) $('#slip-date').textContent = bDate || '—';
+  if($('#slip-veh-row')){
+    if(vNum){
+      $('#slip-veh-row').style.display = 'block';
+      if($('#slip-vehicle')) $('#slip-vehicle').textContent = vNum;
+    } else {
+      $('#slip-veh-row').style.display = 'none';
+    }
+  }
 
-  // Point 1 & 5: Multi-cheque Calculation and Settlement Breakdown
-  const chqRows = $$('#cheque-rows-container .cheque-row');
+  // Payment Settlement live calculation (Cash + Cheque auto-balancing)
   const cashPaid = n($('#paid-cash')?.value);
   const payLater = n($('#pay-later-cash')?.value);
   const remainingForCheques = Math.max(0, Math.round((end - cashPaid - payLater) * 100) / 100);
 
+  const chqRows = $$('#cheque-rows-container .cheque-row');
   if(chqRows.length === 1){
     const amtInp = chqRows[0].querySelector('.row-cheque-amt');
     if(amtInp && document.activeElement !== amtInp){
@@ -986,9 +1176,10 @@ function calculate(){
   chqRows.forEach(r => {
     const amt = n(r.querySelector('.row-cheque-amt')?.value);
     const num = r.querySelector('.row-cheque-num')?.value.trim();
+    const dt = r.querySelector('.row-cheque-date')?.value || '';
     totalChequesSum += amt;
     if(amt > 0){
-      chqSummaries.push(num ? `#${num} (${money(amt)})` : money(amt));
+      chqSummaries.push(`${num || '—'} | ${dt || bDate || '—'} | ${amt.toFixed(2)}`);
     }
   });
 
@@ -999,7 +1190,7 @@ function calculate(){
   if(chqInfoEl){
     if(chqSummaries.length){
       chqInfoEl.style.display = 'block';
-      chqInfoEl.textContent = `ચેક: ${chqSummaries.join(' · ')}`;
+      chqInfoEl.innerHTML = `<strong>Cheque Details :</strong><br>${chqSummaries.join('<br>')}`;
     } else {
       chqInfoEl.style.display = 'none';
     }
@@ -1009,16 +1200,86 @@ function calculate(){
   if(helper){
     helper.textContent = totalChequesSum > 0 ? `કુલ ચેક રકમ: ${money(totalChequesSum)}` : '';
   }
-
-  const balance = Math.max(0, Math.round((end - cashPaid - totalChequesSum - payLater) * 100) / 100);
-  if($('#slip-balance')) $('#slip-balance').textContent = money(balance);
 }
-async function submitBill(e){e.preventDefault();const err=$('#bill-error');err.textContent='';const all=lines();if(!all.length){err.textContent='Add at least one peanut purchase line.';return}if(all.some(x=>(Number(x.bag_count||0)*Number(x.bag_tare_kg||0)+Number(x.kapat_kg||0))>=Number(x.gross_kg||0))){err.textContent='Total deductions (Bardana + Kapat) cannot equal or exceed gross weight.';return}const farmerName = $('#farmer-name')?.value.trim();
+
+function addChequeRow(init=null){
+  const container = $('#cheque-rows-container');
+  if(!container) return;
+  const count = container.querySelectorAll('.cheque-row').length;
+  if(count >= 5){
+    notify('Maximum 5 cheques per bill allowed.', 'bad');
+    return;
+  }
+  const div = document.createElement('div');
+  div.className = 'cheque-row form-grid three';
+  div.style.gap = '10px 14px';
+  div.style.marginBottom = '10px';
+  div.style.alignItems = 'flex-end';
+
+  const defaultDate = init?.cheque_date || $('#bill-date')?.value || new Date().toISOString().split('T')[0];
+  const defaultNum = init?.cheque_number || '';
+  const defaultAmt = init?.cheque_amount !== undefined ? init.cheque_amount : '';
+
+  div.innerHTML = `
+    <label style="margin:0">ચેક નંબર
+      <input type="text" class="row-cheque-num" placeholder="000001" value="${text(defaultNum)}" style="font-weight:700">
+    </label>
+    <label style="margin:0">ચેક તારીખ
+      <input type="date" class="row-cheque-date" value="${defaultDate}">
+    </label>
+    <div style="display:flex;gap:6px;align-items:flex-end">
+      <label style="margin:0;flex:1">Cheque Amount
+        <input type="number" class="row-cheque-amt" min="0" step="0.01" placeholder="0.00" value="${defaultAmt}" style="font-weight:700">
+      </label>
+      ${count > 0 ? `<button type="button" class="mini-button remove-chq-btn" style="border:none;background:#fee2e2;color:#dc2626;border-radius:6px;padding:8px 10px;cursor:pointer;font-weight:bold" title="ચેક કાઢી નાખો">×</button>` : ''}
+    </div>
+  `;
+
+  const remBtn = div.querySelector('.remove-chq-btn');
+  if(remBtn){
+    remBtn.onclick = () => {
+      div.remove();
+      calculate();
+    };
+  }
+
+  container.appendChild(div);
+  calculate();
+}
+
+async function submitBill(e){
+  e.preventDefault();
+  const err = $('#bill-error');
+  err.textContent = '';
+  const all = lines();
+  if(!all.length){
+    err.textContent = 'Add at least one peanut purchase line (માલની વિગત ઉમેરો).';
+    return;
+  }
+  if(all.some(x => Number(x.kapat_kg || 0) >= Number(x.gross_kg || 0))){
+    err.textContent = 'Total deductions (Kapat) cannot equal or exceed gross weight.';
+    return;
+  }
+  const farmerName = $('#farmer-name')?.value.trim();
   const farmerVillage = $('#farmer-village')?.value.trim();
   const farmerMobile = $('#farmer-mobile')?.value.trim() || '';
   const selectedFarmerId = $('#selected-farmer-id')?.value ? Number($('#selected-farmer-id').value) : null;
-  if(!farmerName || farmerName.length < 2){err.textContent='ખેડૂતનું નામ દાખલ કરો (Farmer name is required).';return}
-  if(!farmerVillage || farmerVillage.length < 2){err.textContent='ગામનું નામ દાખલ કરો (Village is required).';return}const isEditing=Boolean(state.editingPurchaseId);if(!confirm(isEditing?'સુધારો સાચવવો છે? (Save amendments to this bill?)':'Post this purchase bill permanently? Verify weight, rate and farmer before continuing.'))return;const cashPaid2=$('#paid-cash')?.value||'0';const payLaterCash=$('#pay-later-cash')?.value||'0';const payLaterDate=$('#pay-later-date')?.value||null;const cheques = [];
+  if(!farmerName || farmerName.length < 2){
+    err.textContent = 'ખેડૂતનું નામ દાખલ કરો (Farmer name is required).';
+    return;
+  }
+  if(!farmerVillage || farmerVillage.length < 2){
+    err.textContent = 'ગામનું નામ દાખલ કરો (Village is required).';
+    return;
+  }
+
+  const isEditing = Boolean(state.editingPurchaseId);
+  if(!confirm(isEditing ? 'સુધારો સાચવવો છે? (Save amendments to this bill?)' : 'Post this purchase bill permanently? Verify weight, rate and farmer before continuing.')) return;
+
+  const cashPaid2 = $('#paid-cash')?.value || '0';
+  const payLaterCash = $('#pay-later-cash')?.value || '0';
+  const payLaterDate = $('#pay-later-date')?.value || null;
+  const cheques = [];
   $$('#cheque-rows-container .cheque-row').forEach(r => {
     const num = r.querySelector('.row-cheque-num')?.value.trim() || '';
     const dt = r.querySelector('.row-cheque-date')?.value || null;
@@ -1027,11 +1288,59 @@ async function submitBill(e){e.preventDefault();const err=$('#bill-error');err.t
       cheques.push({ cheque_number: num, cheque_date: dt, cheque_amount: amt });
     }
   });
+
   const chequeNum = cheques.length > 0 ? cheques[0].cheque_number : '';
   const chequeDate = cheques.length > 0 ? cheques[0].cheque_date : null;
   const chequeAmt = cheques.length > 0 ? cheques[0].cheque_amount : '0';
-  const body={branch_id:Number($('#purchase-branch').value),farmer_id:selectedFarmerId,farmer_name:farmerName,farmer_village:farmerVillage,farmer_mobile:farmerMobile,rst_number:$('#rst').value,vehicle_number:$('#vehicle').value,weighbridge_charges:$('#charges').value,other_deductions:$('#deductions').value,market_transport_cost:$('#transport-cost')?.value||'0',unload_at_godown:Boolean($('#unload-godown')?.checked),round_adjustment:$('#adjust').value,purchase_date:$('#bill-date')?.value||null,notes:$('#notes').value,lines:all,cash_paid:cashPaid2,pay_later_cash:payLaterCash,pay_later_date:payLaterDate,cheque_number:chequeNum,cheque_date:chequeDate,cheque_amount:chequeAmt,cheques:cheques};if(!isEditing)body.idem_key=savedSubmission;const btn=$('#post-bill');btn.disabled=true;btn.textContent=isEditing?'Updating bill…':'Posting bill…';try{const url=isEditing?`/purchases/${state.editingPurchaseId}`:'/purchases';const method=isEditing?'PUT':'POST';const result=await api(url,method,body);notify(isEditing?`Purchase bill ${result.purchase.number} updated.`:`Purchase bill ${result.purchase.number} saved.`);state.editingPurchaseId=null;state.editingPurchaseData=null;updatePendingChequesBadge();await billModal(result.purchase.id);savedSubmission=token();navigate('purchases')}catch(ex){err.textContent=ex.message+' If the connection failed, check the purchase register before retrying.'}finally{btn.disabled=false;btn.textContent=isEditing?'સુધારો સાચવો (Update bill) →':'Post final purchase bill →'}}
 
+  const body = {
+    branch_id: Number($('#purchase-branch').value || state.branch || 1),
+    farmer_id: selectedFarmerId,
+    farmer_name: farmerName,
+    farmer_village: farmerVillage,
+    farmer_mobile: farmerMobile,
+    rst_number: $('#rst')?.value || '',
+    vehicle_number: $('#vehicle')?.value || '',
+    weighbridge_charges: $('#charges')?.value || '0',
+    other_deductions: '0',
+    market_transport_cost: $('#transport-cost')?.value || '0',
+    unload_at_godown: Boolean($('#unload-godown')?.checked),
+    round_adjustment: $('#adjust')?.value || '0',
+    purchase_date: $('#bill-date')?.value || null,
+    notes: $('#notes')?.value || '',
+    lines: all,
+    cash_paid: cashPaid2,
+    pay_later_cash: payLaterCash,
+    pay_later_date: payLaterDate,
+    cheque_number: chequeNum,
+    cheque_date: chequeDate,
+    cheque_amount: chequeAmt,
+    cheques: cheques
+  };
+
+  if(!isEditing) body.idem_key = savedSubmission;
+  const btn = $('#post-bill');
+  btn.disabled = true;
+  btn.textContent = isEditing ? 'Updating bill…' : 'Posting bill…';
+
+  try{
+    const url = isEditing ? `/purchases/${state.editingPurchaseId}` : '/purchases';
+    const method = isEditing ? 'PUT' : 'POST';
+    const result = await api(url, method, body);
+    notify(isEditing ? `Purchase bill ${result.purchase.number} updated.` : `Purchase bill ${result.purchase.number} saved.`);
+    state.editingPurchaseId = null;
+    state.editingPurchaseData = null;
+    updatePendingChequesBadge();
+    await billModal(result.purchase.id);
+    savedSubmission = token();
+    navigate('purchases');
+  }catch(ex){
+    err.textContent = ex.message + ' If the connection failed, check the purchase register before retrying.';
+  }finally{
+    btn.disabled = false;
+    btn.textContent = isEditing ? 'સુધારો સાચવો (Update bill)' : 'બિલ સેવ કરો';
+  }
+}
 
 function sendBillOnWhatsApp(p){
   let mobile = (p.mobile || '').replace(/\D/g, '');
