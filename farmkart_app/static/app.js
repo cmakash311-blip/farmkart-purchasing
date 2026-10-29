@@ -75,17 +75,13 @@ const title=(label,desc,action='')=>`<div class="page-head"><div><div class="eye
 const I18N={
   en:{
     lang_btn:'English',
-    billing_systems:'BILLING SYSTEMS',
-    bulk_billing:'Bulk Purchase Billings',
-    sales_invoice:'Sales Invoice',
-    farmer_billing:'Farmer Purchase Billings',
-    workspace:'YOUR WORKSPACE',
+    workspace:'WORKSPACE',
     dashboard:'Overview',
-    new:'Bill entry',
-    purchases:'Saved bills',
+    new:'New purchase bill',
+    purchases:'Purchase register',
     materials:'Material master',
     payments:'Monthly cheques',
-    reports:'Tally export & settings',
+    reports:'Reports & exports',
     field_ops_section:'FIELD OPERATIONS',
     farmers:'Farmers & Khata',
     admin_section:'ADMIN & SYSTEM',
@@ -100,17 +96,13 @@ const I18N={
   },
   gu:{
     lang_btn:'ગુજરાતી',
-    billing_systems:'બિલિંગ સિસ્ટમ્સ',
-    bulk_billing:'જથ્થાબંધ ખરીદી બિલિંગ',
-    sales_invoice:'વેચાણ ઇન્વોઇસ',
-    farmer_billing:'ખેડૂત ખરીદી બિલિંગ',
-    workspace:'તમારું વર્કસ્પેસ',
+    workspace:'વર્કસ્પેસ',
     dashboard:'ડેશબોર્ડ (ઓવરવ્યૂ)',
-    new:'નવી પાવતી એન્ટ્રી',
-    purchases:'સાચવેલ પાવતીઓ',
+    new:'નવી ખરીદી પાવતી',
+    purchases:'ખરીદી રજીસ્ટર',
     materials:'મટીરીયલ માસ્ટર',
     payments:'માસિક ચેક રજીસ્ટર',
-    reports:'ટેલી નિકાસ અને સેટિંગ્સ',
+    reports:'અહેવાલ અને નિકાસ',
     field_ops_section:'ક્ષેત્ર કામગીરી',
     farmers:'ખેડૂત યાદી અને ખાતાવહી',
     admin_section:'એડમિન અને સિસ્ટમ',
@@ -139,10 +131,7 @@ function applyLanguage(){
     payments:t('payments'),
     reports:t('reports'),
     users:t('users'),
-    audit:t('audit'),
-    bulk_billing:t('bulk_billing'),
-    sales_invoice:t('sales_invoice'),
-    farmer_billing:t('farmer_billing')
+    audit:t('audit')
   };
   $$('#navigation .nav').forEach(btn=>{
     const v=btn.dataset.view;
@@ -156,7 +145,6 @@ function applyLanguage(){
       }
     }
   });
-  if($('#side-label-billing')) $('#side-label-billing').textContent = t('billing_systems');
   if($('#side-label-workspace')) $('#side-label-workspace').textContent = t('workspace');
   if($('#side-label-field')) $('#side-label-field').textContent = t('field_ops_section');
   if($('#side-label-admin')) $('#side-label-admin').textContent = t('admin_section');
@@ -199,43 +187,16 @@ $$('#navigation .nav').forEach(btn=>btn.onclick=()=>navigate(btn.dataset.view));
 function $$(s){return Array.from(document.querySelectorAll(s))}
 function navigate(view){
   if(view!=='new'){state.editingPurchaseId=null;state.editingPurchaseData=null;}
-  if(view === 'bulk_billing' || view === 'sales_invoice'){
-    const isBulk = view === 'bulk_billing';
-    const title = isBulk ? 'Bulk Purchase Billings' : 'Sales Invoice';
-    const titleGu = isBulk ? 'જથ્થાબંધ ખરીદી બિલિંગ' : 'વેચાણ ઇન્વોઇસ';
-    const desc = isBulk ? 'Wholesale batch purchasing and trade procurement' : 'Outward commercial sales billing & GST invoicing';
-    state.view = view;
-    $('#sidebar').classList.remove('open');
-    $$('#navigation .nav').forEach(b => b.classList.toggle('active', b.dataset.view === view));
-    applyLanguage();
-    $('#view').innerHTML = `
-      <div class="panel" style="max-width:720px;margin:40px auto;text-align:center;padding:44px 28px;box-shadow:0 12px 36px rgba(0,0,0,0.06);border-radius:14px">
-        <div style="font-size:46px;margin-bottom:12px">${isBulk ? '📦' : '🧾'}</div>
-        <h2 style="font-size:24px;color:#321d1a;margin-bottom:6px">${title}</h2>
-        <div style="font-size:16px;color:#934939;font-weight:600;margin-bottom:14px">${titleGu}</div>
-        <p class="muted" style="font-size:14.5px;line-height:1.6;margin-bottom:26px;max-width:540px;margin-left:auto;margin-right:auto">
-          ${desc}.<br>
-          This enterprise billing module is part of the multi-system procurement suite. Currently operating live in <strong>Farmer Purchase Billings (ખેડૂત ખરીદી પાવતી)</strong>.
-        </p>
-        <div class="row" style="gap:12px;justify-content:center">
-          <button class="primary" onclick="navigate('new')">Go to Farmer Bill Entry (પાવતી બનાવો) →</button>
-          <button class="secondary" onclick="navigate('purchases')">View Saved Bills (સાચવેલ પાવતીઓ)</button>
-        </div>
-      </div>
-    `;
-    return;
-  }
   state.view=view;
   $('#sidebar').classList.remove('open');
-  $$('#navigation .nav').forEach(b => {
-    if(b.id === 'btn-farmer-billing'){
-      b.classList.toggle('active', false);
-    } else {
-      b.classList.toggle('active', b.dataset.view === view);
-    }
-  });
+  $$('#navigation .nav').forEach(b => b.classList.toggle('active', b.dataset.view === view));
   applyLanguage();
-  $('#view').innerHTML='<div class="panel"><div class="empty">Loading…</div></div>';const f=({dashboard:renderDashboard,new:renderNew,purchases:renderPurchases,farmers:renderFarmers,materials:renderMaterials,payments:renderPayments,reports:renderReports,users:renderUsers,audit:renderAudit})[view];f().catch(err=>{$('#view').innerHTML=`<div class="notice bad">${text(err.message)}</div>`})}
+  $('#view').innerHTML='<div class="panel"><div class="empty">Loading…</div></div>';
+  const f=({dashboard:renderDashboard,new:renderNew,purchases:renderPurchases,farmers:renderFarmers,materials:renderMaterials,payments:renderPayments,reports:renderReports,users:renderUsers,audit:renderAudit})[view];
+  if(f){
+    f().catch(err=>{$('#view').innerHTML=`<div class="notice bad">${text(err.message)}</div>`;});
+  }
+}
 function scope(){return state.branch?'?branch_id='+encodeURIComponent(state.branch):''}
 function table(headers,rows,empty='No records found'){return `<div class="table-wrap"><table><thead><tr>${headers.map(h=>`<th>${text(h)}</th>`).join('')}</tr></thead><tbody>${rows.length?rows.join(''):`<tr><td class="empty" colspan="${headers.length}"><strong>${text(empty)}</strong>New records will appear here.</td></tr>`}</tbody></table></div>`}
 async function renderDashboard(){let [d,all]=await Promise.all([api('/dashboard'+scope()),api('/purchases'+scope())]);$('#view').innerHTML=title('Purchasing overview','Live purchasing visibility across your authorized factories.',`<button class="primary" id="quick-new">+ New purchase</button>`)+`<div class="grid four"><div class="stat"><div class="kicker">Today’s purchases <span class="emoji">▤</span></div><div class="number">${d.today_bills}</div><div class="foot">Bills posted today</div></div><div class="stat"><div class="kicker">Today’s quantity <span class="emoji">♧</span></div><div class="number">${number(d.today_kg)} <small>kg</small></div><div class="foot">Net peanut weight</div></div><div class="stat"><div class="kicker">Today’s purchase value <span class="emoji">₹</span></div><div class="number">${money(d.today_value)}</div><div class="foot">After charges and adjustments</div></div><div class="stat"><div class="kicker">Outstanding payments <span class="emoji">◷</span></div><div class="number">${money(d.outstanding)}</div><div class="foot">Includes pending cheques / bank transfers</div></div></div><div class="grid two" style="margin-top:21px"><div class="panel"><h3>All-time purchasing</h3><div class="detail-grid"><div><small>Total bills</small><strong>${d.all_bills}</strong></div><div><small>Total net weight</small><strong>${number(d.all_kg)} kg</strong></div><div><small>Total payable</small><strong>${money(d.total_purchase_value)}</strong></div></div></div><div class="panel"><h3>Payment instruments</h3><div class="stat" style="border:0;box-shadow:none;padding:0"><div class="kicker">Cheque / bank transfer pending clearance</div><div class="number">${money(d.pending_instruments)}</div></div></div></div><div class="panel" style="margin-top:20px"><div class="row" style="justify-content:space-between"><h3>Recent purchase bills</h3><button class="secondary" id="all-purchases">View all →</button></div>${table(['Bill','Factory','Farmer','Date','Net kg','Payable'],all.slice(0,8).map(p=>`<tr><td><button class="link" data-bill="${p.id}">${text(p.number)}</button></td><td>${text(p.branch)}</td><td>${text(p.farmer)}</td><td>${text(p.date)}</td><td>${number(p.net_kg)}</td><td>${money(p.payable)}</td></tr>`),'No purchase bills yet')}</div>`;$('#quick-new').onclick=()=>navigate('new');$('#all-purchases').onclick=()=>navigate('purchases');wireBills()}
