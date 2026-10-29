@@ -344,6 +344,42 @@ def create_material(data: MaterialIn, user: User = Depends(require_user), db: Se
     db.commit()
     return {'id': mat.id, 'code': mat.code, 'name': mat.name, 'default_rate': inr(mat.default_rate), 'active': mat.active}
 
+@app.put('/api/materials/{material_id}')
+def update_material(material_id: int, data: MaterialUpdateIn, user: User = Depends(require_user), db: Session = Depends(get_db)):
+    allow(user, 'OWNER', 'PURCHASE')
+    mat = db.get(Material, material_id)
+    if not mat:
+        raise HTTPException(404, 'Material not found')
+    if data.name and data.name.strip():
+        clean = data.name.strip()
+        dup = db.scalar(select(Material).where(func.lower(Material.name) == clean.lower(), Material.id != material_id))
+        if dup:
+            raise HTTPException(400, f"Material '{clean}' already exists")
+        mat.name = clean
+    if data.default_rate is not None:
+        mat.default_rate = d(data.default_rate)
+    if data.active is not None:
+        mat.active = data.active
+    audit(db, user, user.branch_id, 'UPDATE_MATERIAL', 'material', mat.id, f"Updated {mat.name}")
+    db.commit()
+    return {'id': mat.id, 'code': mat.code, 'name': mat.name, 'default_rate': inr(mat.default_rate), 'active': mat.active}
+
+@app.delete('/api/materials/{material_id}')
+def delete_material(material_id: int, user: User = Depends(require_user), db: Session = Depends(get_db)):
+    allow(user, 'OWNER', 'PURCHASE')
+    mat = db.get(Material, material_id)
+    if not mat:
+        raise HTTPException(404, 'Material not found')
+    linked_count = db.scalar(select(func.count(PurchaseLine.id)).where(PurchaseLine.material_id == material_id)) or 0
+    if linked_count > 0:
+        raise HTTPException(400, f"Cannot delete '{mat.name}': It is linked to {linked_count} existing purchase bill lines. Disable it instead to remove from dropdowns.")
+    name = mat.name
+    db.delete(mat)
+    db.flush()
+    audit(db, user, user.branch_id, 'DELETE_MATERIAL', 'material', material_id, f"Deleted {name}")
+    db.commit()
+    return {'ok': True, 'deleted_id': material_id, 'name': name}
+
 @app.get('/api/branches')
 def branches(user:User=Depends(require_user),db:Session=Depends(get_db)):
     q=select(Branch).order_by(Branch.id)

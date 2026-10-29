@@ -836,3 +836,68 @@ def test_multiple_cheques_settlement(setup):
     assert len(edited_chqs) == 2
     assert any(p['reference'] == 'MULTI-CHQ-A' and p['amount'] == '20000.00' for p in edited_chqs)
     assert any(p['reference'] == 'MULTI-CHQ-B' and p['amount'] == '19980.00' for p in edited_chqs)
+
+def test_material_master_crud(setup):
+    c = setup
+    h_buy = auth(c, 'hmtbuy')
+
+    # 1. List materials (seeded defaults exist)
+    r = c.get('/api/materials', headers=h_buy)
+    assert r.status_code == 200
+    mats = r.json()
+    assert len(mats) >= 8
+    names = [m['name'] for m in mats]
+    assert 'મગફળી - 24' in names
+    assert 'Java' in names
+
+    # 2. Create new material
+    create_res = c.post('/api/materials', headers=h_buy, json={
+        'name': 'Kadiri-6',
+        'code': 'MAT-KAD-6',
+        'default_rate': '1850.50',
+        'hsn_code': '1202'
+    })
+    assert create_res.status_code == 201, create_res.text
+    new_mat = create_res.json()
+    assert new_mat['name'] == 'Kadiri-6'
+    assert new_mat['active'] is True
+    mat_id = new_mat['id']
+
+    # Duplicate name should fail
+    dup = c.post('/api/materials', headers=h_buy, json={'name': 'Kadiri-6'})
+    assert dup.status_code == 400
+
+    # 3. Update material (change name and rate, toggle active)
+    upd_res = c.put(f'/api/materials/{mat_id}', headers=h_buy, json={
+        'name': 'Kadiri-6 Premium',
+        'default_rate': '1900.00',
+        'active': False
+    })
+    assert upd_res.status_code == 200
+    assert upd_res.json()['name'] == 'Kadiri-6 Premium'
+    assert upd_res.json()['active'] is False
+
+    # 4. Create another material, link to a bill, and test safe deletion prevention
+    temp_res = c.post('/api/materials', headers=h_buy, json={'name': 'Temp Groundnut'})
+    assert temp_res.status_code == 201
+    temp_id = temp_res.json()['id']
+
+    # Delete unlinked material succeeds
+    del_res = c.delete(f'/api/materials/{temp_id}', headers=h_buy)
+    assert del_res.status_code == 200
+    assert del_res.json()['ok'] is True
+
+    # Link Kadiri-6 Premium to a purchase bill
+    fid = farmer(c, h_buy)
+    bill_res = c.post('/api/purchases', headers=h_buy, json={
+        'branch_id': 1,
+        'farmer_id': fid,
+        'idem_key': uuid.uuid4().hex,
+        'lines': [{'variety': 'Kadiri-6 Premium', 'material_id': mat_id, 'gross_kg': '1000', 'kapat_kg': '0', 'rate_per_20kg': '1900'}]
+    })
+    assert bill_res.status_code == 201
+
+    # Try deleting linked material -> should be blocked with 400
+    del_blocked = c.delete(f'/api/materials/{mat_id}', headers=h_buy)
+    assert del_blocked.status_code == 400
+    assert 'linked to' in del_blocked.json()['detail']

@@ -75,7 +75,7 @@ const title=(label,desc,action='')=>`<div class="page-head"><div><div class="eye
 const I18N={
   en:{
     lang_btn:'English',dashboard:'Overview',new:'New purchase bill',purchases:'Purchase register',
-    farmers:'Farmers & Khata',payments:'Cheques & payments',reports:'Reports & exports',
+    farmers:'Farmers & Khata',materials:'Material master',payments:'Cheques & payments',reports:'Reports & exports',
     users:'Staff & user management',audit:'Audit history',factory:'Factory',farmer:'Farmer',
     village:'Village',mobile:'Mobile',variety:'Variety',bags:'Bags (કટ્ટા)',tare:'Tare/bag (kg)',
     gross_kg:'Gross kg',kapat_kg:'Kapat kg',net_kg:'Net kg',rate_20kg:'Rate / 20kg (₹)',
@@ -84,7 +84,7 @@ const I18N={
   },
   gu:{
     lang_btn:'ગુજરાતી',dashboard:'ડેશબોર્ડ (ઓવરવ્યૂ)',new:'નવી ખરીદી પાવતી',purchases:'ખરીદી રજીસ્ટર',
-    farmers:'ખેડૂત યાદી અને ખાતાવહી',payments:'ચૂકવણી અને ચેક',reports:'અહેવાલ અને નિકાસ',
+    farmers:'ખેડૂત યાદી અને ખાતાવહી',materials:'મટીરીયલ માસ્ટર',payments:'ચૂકવણી અને ચેક',reports:'અહેવાલ અને નિકાસ',
     users:'કર્મચારી વ્યવસ્થાપન',audit:'ઓડિટ હિસ્ટ્રી',factory:'ફેક્ટરી',farmer:'ખેડૂત',
     village:'ગામ',mobile:'મોબાઈલ',variety:'મગફળી જાત',bags:'કટ્ટા (બોરી)',tare:'બારદાન વજન (કિલો)',
     gross_kg:'કુલ વજન (કિલો)',kapat_kg:'કપાત (કિલો)',net_kg:'ચોખ્ખું વજન (કિલો)',rate_20kg:'ભાવ / મણ (૨૦ કિલો)',
@@ -126,7 +126,7 @@ $('#branch-filter').onchange=e=>{state.branch=e.target.value;updatePendingCheque
 $('#mobile-menu').onclick=()=>$('#sidebar').classList.toggle('open');
 $$('#navigation .nav').forEach(btn=>btn.onclick=()=>navigate(btn.dataset.view));
 function $$(s){return Array.from(document.querySelectorAll(s))}
-function navigate(view){if(view!=='new'){state.editingPurchaseId=null;state.editingPurchaseData=null;}state.view=view;$('#sidebar').classList.remove('open');$$('#navigation .nav').forEach(b=>b.classList.toggle('active',b.dataset.view===view));applyLanguage();$('#view').innerHTML='<div class="panel"><div class="empty">Loading…</div></div>';const f=({dashboard:renderDashboard,new:renderNew,purchases:renderPurchases,farmers:renderFarmers,payments:renderPayments,reports:renderReports,users:renderUsers,audit:renderAudit})[view];f().catch(err=>{$('#view').innerHTML=`<div class="notice bad">${text(err.message)}</div>`})}
+function navigate(view){if(view!=='new'){state.editingPurchaseId=null;state.editingPurchaseData=null;}state.view=view;$('#sidebar').classList.remove('open');$$('#navigation .nav').forEach(b=>b.classList.toggle('active',b.dataset.view===view));applyLanguage();$('#view').innerHTML='<div class="panel"><div class="empty">Loading…</div></div>';const f=({dashboard:renderDashboard,new:renderNew,purchases:renderPurchases,farmers:renderFarmers,materials:renderMaterials,payments:renderPayments,reports:renderReports,users:renderUsers,audit:renderAudit})[view];f().catch(err=>{$('#view').innerHTML=`<div class="notice bad">${text(err.message)}</div>`})}
 function scope(){return state.branch?'?branch_id='+encodeURIComponent(state.branch):''}
 function table(headers,rows,empty='No records found'){return `<div class="table-wrap"><table><thead><tr>${headers.map(h=>`<th>${text(h)}</th>`).join('')}</tr></thead><tbody>${rows.length?rows.join(''):`<tr><td class="empty" colspan="${headers.length}"><strong>${text(empty)}</strong>New records will appear here.</td></tr>`}</tbody></table></div>`}
 async function renderDashboard(){let [d,all]=await Promise.all([api('/dashboard'+scope()),api('/purchases'+scope())]);$('#view').innerHTML=title('Purchasing overview','Live purchasing visibility across your authorized factories.',`<button class="primary" id="quick-new">+ New purchase</button>`)+`<div class="grid four"><div class="stat"><div class="kicker">Today’s purchases <span class="emoji">▤</span></div><div class="number">${d.today_bills}</div><div class="foot">Bills posted today</div></div><div class="stat"><div class="kicker">Today’s quantity <span class="emoji">♧</span></div><div class="number">${number(d.today_kg)} <small>kg</small></div><div class="foot">Net peanut weight</div></div><div class="stat"><div class="kicker">Today’s purchase value <span class="emoji">₹</span></div><div class="number">${money(d.today_value)}</div><div class="foot">After charges and adjustments</div></div><div class="stat"><div class="kicker">Outstanding payments <span class="emoji">◷</span></div><div class="number">${money(d.outstanding)}</div><div class="foot">Includes pending cheques / bank transfers</div></div></div><div class="grid two" style="margin-top:21px"><div class="panel"><h3>All-time purchasing</h3><div class="detail-grid"><div><small>Total bills</small><strong>${d.all_bills}</strong></div><div><small>Total net weight</small><strong>${number(d.all_kg)} kg</strong></div><div><small>Total payable</small><strong>${money(d.total_purchase_value)}</strong></div></div></div><div class="panel"><h3>Payment instruments</h3><div class="stat" style="border:0;box-shadow:none;padding:0"><div class="kicker">Cheque / bank transfer pending clearance</div><div class="number">${money(d.pending_instruments)}</div></div></div></div><div class="panel" style="margin-top:20px"><div class="row" style="justify-content:space-between"><h3>Recent purchase bills</h3><button class="secondary" id="all-purchases">View all →</button></div>${table(['Bill','Factory','Farmer','Date','Net kg','Payable'],all.slice(0,8).map(p=>`<tr><td><button class="link" data-bill="${p.id}">${text(p.number)}</button></td><td>${text(p.branch)}</td><td>${text(p.farmer)}</td><td>${text(p.date)}</td><td>${number(p.net_kg)}</td><td>${money(p.payable)}</td></tr>`),'No purchase bills yet')}</div>`;$('#quick-new').onclick=()=>navigate('new');$('#all-purchases').onclick=()=>navigate('purchases');wireBills()}
@@ -2277,5 +2277,169 @@ function calibrationSettingsModal(p){
     });
     notify('Stationery alignment offsets saved for this browser.');
     stationeryOverlayModal(p);
+  };
+}
+
+
+async function renderMaterials(){
+  const canEdit = ['OWNER','PURCHASE'].includes(state.user.role);
+  $('#view').innerHTML = title(
+    'Material Master (મટીરીયલ માસ્ટર)',
+    'Configure peanut varieties, default rates per 20 kg, and procurement lot items.',
+    canEdit ? `<button class="primary" id="open-add-material-btn">+ Add Material (નવું મટીરીયલ)</button>` : ''
+  ) + `
+    <div class="panel">
+      <div class="filters" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <input id="material-search" placeholder="Search material name or code..." style="max-width:320px">
+        <span class="help" style="margin:0">Active materials immediately populate the Material dropdown on the purchase bill form.</span>
+      </div>
+      <div id="materials-table-wrap">Loading materials…</div>
+    </div>
+  `;
+
+  let loadedMaterials = [];
+  async function load(){
+    try{
+      loadedMaterials = await api('/materials?all=true');
+      display();
+    }catch(err){
+      $('#materials-table-wrap').innerHTML = `<div class="notice bad">${text(err.message)}</div>`;
+    }
+  }
+
+  function display(){
+    const q = ($('#material-search')?.value || '').trim().toLowerCase();
+    const rows = loadedMaterials.filter(m => !q || m.name.toLowerCase().includes(q) || m.code.toLowerCase().includes(q));
+    
+    $('#materials-table-wrap').innerHTML = table(
+      ['Code (કોડ)', 'Material Name (મટીરીયલ નામ)', 'HSN Code', 'Default Rate (₹ / 20kg)', 'Status (સ્થિતિ)', 'Actions (ક્રિયા)'],
+      rows.map(m => {
+        const statusPill = m.active
+          ? `<span class="pill cleared">ACTIVE</span>`
+          : `<span class="pill bounced">INACTIVE</span>`;
+        return `<tr>
+          <td><code>${text(m.code)}</code></td>
+          <td><strong>${text(m.name)}</strong></td>
+          <td>${text(m.hsn_code || '1202')}</td>
+          <td><strong>₹${text(m.default_rate || '0.00')}</strong></td>
+          <td>${statusPill}</td>
+          <td>
+            <div class="row" style="gap:6px">
+              ${canEdit ? `<button class="secondary" data-edit-mat="${m.id}" style="padding:4px 8px;font-size:11px">✏ Edit</button>` : '—'}
+              ${canEdit ? `<button class="outline-btn" data-toggle-mat="${m.id}" data-active="${m.active?0:1}" style="padding:4px 8px;font-size:11px;color:${m.active?'#b45309':'#15803d'}">${m.active?'Disable':'Enable'}</button>` : ''}
+              ${canEdit ? `<button class="outline-btn" data-delete-mat="${m.id}" data-mat-name="${text(m.name)}" style="padding:4px 8px;font-size:11px;color:#dc2626;border-color:#fca5a5" title="Delete">🗑 Delete</button>` : ''}
+            </div>
+          </td>
+        </tr>`;
+      }),
+      'No materials configured'
+    );
+
+    $$('[data-edit-mat]').forEach(btn => {
+      btn.onclick = () => {
+        const mat = loadedMaterials.find(m => m.id === Number(btn.dataset.editMat));
+        if(mat) materialModal(mat, load);
+      };
+    });
+
+    $$('[data-toggle-mat]').forEach(btn => {
+      btn.onclick = async () => {
+        const matId = Number(btn.dataset.toggleMat);
+        const newActive = btn.dataset.active === '1';
+        btn.disabled = true;
+        try{
+          await api(`/materials/${matId}`, 'PUT', { active: newActive });
+          notify(`Material status updated.`);
+          await load();
+        }catch(err){
+          notify(err.message, 'bad');
+          btn.disabled = false;
+        }
+      };
+    });
+
+    $$('[data-delete-mat]').forEach(btn => {
+      btn.onclick = async () => {
+        const matId = Number(btn.dataset.deleteMat);
+        const matName = btn.dataset.matName;
+        if(!confirm(`Are you sure you want to delete material "${matName}" from master?`)) return;
+        btn.disabled = true;
+        try{
+          await api(`/materials/${matId}`, 'DELETE');
+          notify(`Material "${matName}" deleted successfully.`);
+          await load();
+        }catch(err){
+          notify(err.message, 'bad');
+          btn.disabled = false;
+        }
+      };
+    });
+  }
+
+  $('#material-search').oninput = display;
+  if($('#open-add-material-btn')){
+    $('#open-add-material-btn').onclick = () => materialModal(null, load);
+  }
+
+  await load();
+}
+
+function materialModal(mat=null, done=null){
+  const isEdit = Boolean(mat);
+  openModal(`
+    <h2>${isEdit ? 'Edit Material (મટીરીયલ સુધારો)' : 'Add New Material (નવું મટીરીયલ ઉમેરો)'}</h2>
+    <p class="muted">Materials configured here appear directly in the Material dropdown on the purchase bill form.</p>
+    <form id="material-form" style="margin-top:16px">
+      <div class="form-grid two">
+        <label>Material Name (મટીરીયલ નામ) *
+          <input name="name" required minlength="2" maxlength="100" placeholder="e.g. Kadiri, G-10, મગફળી - 24" value="${mat?text(mat.name):''}">
+        </label>
+        <label>Material Code (કોડ)
+          <input name="code" maxlength="40" placeholder="e.g. MAT-KADIRI (optional)" value="${mat?text(mat.code):''}" ${isEdit?'readonly style="background:#f9fafb"':''}>
+        </label>
+        <label>Default Rate / 20kg (ડિફોલ્ટ ભાવ ₹)
+          <input name="default_rate" type="number" min="0" step="0.01" placeholder="1000.00" value="${mat?Number(mat.default_rate||0):'0'}">
+        </label>
+        <label>HSN Code (એચ.એસ.એન કોડ)
+          <input name="hsn_code" maxlength="20" placeholder="1202" value="${mat?text(mat.hsn_code||'1202'):'1202'}">
+        </label>
+      </div>
+      <p id="mat-modal-error" class="error-text"></p>
+      <div class="row" style="gap:10px;margin-top:18px">
+        <button type="submit" class="primary">${isEdit ? 'Update Material' : 'Save Material'}</button>
+        <button type="button" class="secondary" id="cancel-mat-modal">Cancel</button>
+      </div>
+    </form>
+  `);
+
+  $('#cancel-mat-modal').onclick = closeModal;
+  $('#material-form').onsubmit = async e => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    $('#mat-modal-error').textContent = '';
+    const formData = new FormData(e.target);
+    const body = {
+      name: formData.get('name').trim(),
+      code: formData.get('code') ? formData.get('code').trim() : undefined,
+      default_rate: formData.get('default_rate') || '0',
+      hsn_code: formData.get('hsn_code') ? formData.get('hsn_code').trim() : '1202'
+    };
+
+    try{
+      if(isEdit){
+        await api(`/materials/${mat.id}`, 'PUT', { name: body.name, default_rate: body.default_rate });
+        notify(`Material ${body.name} updated.`);
+      } else {
+        await api('/materials', 'POST', body);
+        notify(`New material ${body.name} added to master.`);
+      }
+      closeModal();
+      if(done) await done();
+    }catch(err){
+      $('#mat-modal-error').textContent = err.message;
+    }finally{
+      btn.disabled = false;
+    }
   };
 }
